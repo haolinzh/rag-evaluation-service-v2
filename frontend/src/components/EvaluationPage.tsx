@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Button, Typography, Space, Card, Checkbox, Switch, Progress, Table, Tabs, Tag, Alert, Spin, Empty, Select, Segmented,
 } from 'antd';
-import { ArrowLeftOutlined, ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { runEvaluation, fetchEvaluationQuestions, fetchEvaluationHistory, fetchEvaluationRun, fetchConfig } from '../api';
+import { ArrowLeftOutlined, ExperimentOutlined, ThunderboltOutlined, StopOutlined } from '@ant-design/icons';
+import { runEvaluation, fetchEvaluationQuestions, fetchEvaluationHistory, fetchEvaluationRun, fetchConfig, fetchEvaluationStatus, cancelEvaluation } from '../api';
 import type { EvaluationEvent, EvaluationSummary, EvaluationQuestionResult, EvaluationRunMeta } from '../types';
 
 interface Props {
@@ -38,7 +38,7 @@ const formatTime = (iso: string) => (iso ? iso.replace('T', ' ').slice(0, 19) : 
 const runLabel = (h: EvaluationRunMeta) => {
   const base = `#${h.id} · ${formatTime(h.createdAt)} · ${h.modes.join(' / ')}`;
   if (h.judgeEnabled == null && h.judgeModel == null) return base;
-  return `${base} · ${h.judgeEnabled ? `Judge ${h.judgeModel ?? ''}` : '代理'}`;
+  return `${base} · ${h.judgeEnabled ? `大模型评测 ${h.judgeModel ?? ''}` : '规则评测'}`;
 };
 
 const EvaluationPage: React.FC<Props> = ({ onBack }) => {
@@ -60,6 +60,10 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
   const [history, setHistory] = useState<EvaluationRunMeta[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [bgRunning, setBgRunning] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const lastSeenRunId = useRef<number | null>(null);
 
   useEffect(() => {
     fetchEvaluationQuestions().then((qs) => setQuestionCount(qs.length)).catch(() => {});
@@ -68,9 +72,37 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
   useEffect(() => {
     fetchEvaluationHistory().then((list) => {
       setHistory(list);
-      if (list.length > 0) setSelectedRunId(list[0].id);
+      if (list.length > 0) {
+        lastSeenRunId.current = list[0].id;
+        setSelectedRunId(list[0].id);
+      }
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const poll = () => {
+      fetchEvaluationStatus()
+        .then((st) => {
+          setBgRunning(st.running);
+          if (!st.running) {
+            setCancelling(false);
+            fetchEvaluationHistory().then((list) => {
+              setHistory(list);
+              if (list.length > 0 && list[0].id !== lastSeenRunId.current) {
+                lastSeenRunId.current = list[0].id;
+                setSelectedRunId(list[0].id);
+              }
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    };
+    poll();
+    const id = window.setInterval(poll, 3000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     fetchConfig().then((c) => {
@@ -149,13 +181,36 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
         setCurrentQuestion(null);
         fetchEvaluationHistory().then((list) => {
           setHistory(list);
-          if (list.length > 0) setSelectedRunId(list[0].id);
+          if (list.length > 0) {
+            lastSeenRunId.current = list[0].id;
+            setSelectedRunId(list[0].id);
+          }
         }).catch(() => {});
+        break;
+      case 'cancelled':
+        setRunning(false);
+        setCancelling(false);
+        setSummaries([]);
+        setResultsByMode({});
+        setDoneCount(0);
+        setTotalCount(0);
+        setCurrentMode(null);
+        setCurrentQuestion(null);
+        setIngestStatus(null);
         break;
       case 'error':
         setError(evt.message);
         setRunning(false);
         break;
+    }
+  };
+
+  const cancel = async () => {
+    setCancelling(true);
+    try {
+      await cancelEvaluation();
+    } catch {
+      // ignore — the cancelled event or status poll will reconcile
     }
   };
 
@@ -170,11 +225,15 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
     setCurrentMode(null);
     setCurrentQuestion(null);
     setIngestStatus(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      await runEvaluation(runModes, clearCache, { judgeEnabled, judgeModel }, handleEvent);
+      await runEvaluation(runModes, clearCache, { judgeEnabled, judgeModel }, handleEvent, controller.signal);
     } catch (e: any) {
-      setError(e?.message ?? '测评请求失败');
-      setRunning(false);
+      if (e?.name !== 'AbortError') {
+        setError(e?.message ?? '测评请求失败');
+        setRunning(false);
+      }
     }
   };
 
@@ -217,7 +276,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
       </Typography.Paragraph>
       {r.judgeUsed && (
         <div style={{ marginBottom: 8 }}>
-          <Tag color="purple">LLM Judge · {r.judgeModel ?? ''}</Tag>
+          <Tag color="purple">大模型评测 · {r.judgeModel ?? ''}</Tag>
           {r.judgeReason && (
             <Typography.Text type="secondary" style={{ display: 'block', whiteSpace: 'pre-wrap' }}>{r.judgeReason}</Typography.Text>
           )}
@@ -244,7 +303,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
   return (
     <div style={{ height: '100vh', overflowY: 'auto', padding: 24 }}>
       <Space style={{ marginBottom: 16 }} align="center" wrap>
-        <Button icon={<ArrowLeftOutlined />} onClick={onBack} disabled={running}>返回</Button>
+        <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0 }}>
           <ExperimentOutlined /> 一键测评
         </Typography.Title>
@@ -276,8 +335,8 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
           <span>打分方式：</span>
           <Segmented
             options={[
-              { label: 'LLM Judge', value: 'judge' },
-              { label: '语义代理', value: 'proxy' },
+              { label: '大模型评测', value: 'judge' },
+              { label: '规则评测', value: 'proxy' },
             ]}
             value={judgeEnabled ? 'judge' : 'proxy'}
             onChange={(v) => setJudgeEnabled(v === 'judge')}
@@ -320,8 +379,29 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
               {currentQuestion ? `　|　${currentQuestion}` : ''}
             </Typography.Text>
             <Typography.Text type="secondary">已完成 {doneCount}/{totalCount || '…'} 题</Typography.Text>
+            <Typography.Text type="secondary">
+              测评在后台继续，可点击「返回」切去其他页面，稍后再进入本页查看结果。
+            </Typography.Text>
+            <Button danger icon={<StopOutlined />} onClick={cancel} loading={cancelling} disabled={cancelling}>
+              {cancelling ? '取消中…' : '放弃测评'}
+            </Button>
           </Space>
         </Card>
+      )}
+
+      {bgRunning && !running && (
+        <Alert
+          type="info"
+          showIcon
+          message="有一轮测评正在后台进行"
+          description="完成后会自动出现在上方历史列表并加载结果，稍等片刻即可。"
+          action={
+            <Button danger size="small" icon={<StopOutlined />} onClick={cancel} loading={cancelling} disabled={cancelling}>
+              放弃
+            </Button>
+          }
+          style={{ marginBottom: 16 }}
+        />
       )}
 
       {summaries.length === 0 && !running && (

@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 
 /**
  * LLM-as-Judge：用 DashScope 对话模型对单次问答做忠实度 / 上下文精确度 / 回答相关性打分。
- * 一次调用返回三个指标；任何异常（无 key / 超时 / JSON 解析失败）都向上抛出，由调用方回退到语义代理。
+ * 一次调用返回三个指标；任何异常（无 key / 超时 / JSON 解析失败）都向上抛出，由调用方回退到规则评测。
  */
 @Service
 public class JudgeService {

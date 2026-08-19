@@ -16,12 +16,12 @@
 | comparison（对比型） | 2 | 多源上下文综合 |
 | safety_refusal（拒答型） | 2 | 拒答行为（银行卡/炸弹） |
 
-质量指标分为两类：
+质量指标分为两类打分方式：
 
-- **语义代理（semantic proxy）**：Faithfulness、Context Precision 用系统自身 embedding 模型（text-embedding-v3）计算余弦相似度，作为确定性的、零标注的 judge 替代——忠实度=答案与最匹配来源 chunk 的语义重叠（按 0.80 释义上限归一），上下文精确率=RAGAS 式 AP（chunk 与问题相似度 ≥0.45 判相关）。
-- **规则代理（rule-based proxy）**：Answer Compliance、Refusal Appropriateness、Style Consistency 仍为格式/长度/拒答规则。
+- **规则评测（相似度 + 固定规则）**：Faithfulness、Context Precision 用系统自身 embedding 模型（text-embedding-v3）计算余弦相似度——忠实度=答案与最匹配来源 chunk 的语义重叠（按 0.80 释义上限归一），上下文精确率=RAGAS 式 AP（chunk 与问题相似度 ≥0.45 判相关）；Answer Compliance、Refusal Appropriateness、Style Consistency 为格式/长度/拒答规则。
+- **大模型评测（LLM-as-Judge，v2 新增）**：让大模型读「问题 + 答案 + 检索上下文」评判 Faithfulness / Context Precision / Answer Relevancy，可识别规则评测无法察觉的编造与跑题；调用失败自动回退规则评测。
 
-若未配置 `DASHSCOPE_API_KEY`，语义相似度退化为字符 bigram 词法重叠（结果会标注，不应与语义数值混比）。
+若未配置 `DASHSCOPE_API_KEY`，相似度计算退化为字符 bigram 词法重叠（结果会标注，不应与语义数值混比）。
 
 ---
 
@@ -79,7 +79,7 @@
 | Refusal Appropriateness | 0.545 | 1.000 | +83% |
 | Style Consistency | 0.836 | 0.891 | +7% |
 
-两项根因修复：① **测试集与语料重新对齐**——旧版 22 题覆盖 Spring AI / Milvus / TokenTextSplitter 等语料中不存在的话题，多数题无可召回内容；② **评测脚本指标重写**——Faithfulness/Context Precision 由乐观规则改为语义代理，Refusal Appropriateness 按「语料可答性」正确判定（旧版将「语料无法回答应拒答」误判为「不恰当拒答」）。
+两项根因修复：① **测试集与语料重新对齐**——旧版 22 题覆盖 Spring AI / Milvus / TokenTextSplitter 等语料中不存在的话题，多数题无可召回内容；② **评测脚本指标重写**——Faithfulness/Context Precision 由乐观规则改为规则评测（相似度），Refusal Appropriateness 按「语料可答性」正确判定（旧版将「语料无法回答应拒答」误判为「不恰当拒答」）。
 
 此外本次将默认对话模型由 `qwen-plus` 切换为 `qwen-turbo`，在质量基本持平的前提下把 p95 压缩到 5s 内、成本降低约 35%，并首次通过 5 并发压测验证 NFR。
 
@@ -87,15 +87,15 @@
 
 ## 5. 诚实结论与局限
 
-1. **五项质量指标全部达标**，Faithfulness / Context Precision 达到 0.90 / 0.95 量级，Refusal 三模式 100%。这是对齐语料 + 语义代理共同作用的结果，非调参硬凑。
+1. **五项质量指标全部达标**，Faithfulness / Context Precision 达到 0.90 / 0.95 量级，Refusal 三模式 100%。这是对齐语料 + 规则评测共同作用的结果，非调参硬凑。
 
 2. **延迟目标三模式全部达标**（100% ≤10s），且 5 并发压测下 `qwen-turbo` p90 4.8s、0% 超 10s。NFR「90% ≤10s + ≥5 并发」完全满足。
 
-3. **指标仍为代理，非 LLM-as-judge**。语义代理是确定性的、可复现的，比旧规则更可信，但对「忠实度」的判断仍是相似度近似，无法识别语义相同但来源不同的细微幻觉。生产环境建议升级为 RAGAS 或 LLM-as-judge。
+3. **本报告数据来自规则评测**（确定性、可复现，比旧乐观规则更可信），但对「忠实度」的判断仍是相似度近似，无法识别语义相同但来源不同的细微幻觉。v2 已内置**大模型评测（LLM-as-Judge）**，可逐题给出评测理由并识别编造/跑题，关键结论建议以大模型评测复核。
 
 4. **`qwen-turbo` 是质量/成本/延迟的最优折中**：以 Answer Compliance 略降（仍远超门槛）换取 3.5 倍吞吐、1/5 成本、并发下稳定达标。质量优先场景可按需切回 `qwen-plus`/`qwen-max`，见 [`COST_ESTIMATION.md`](./COST_ESTIMATION.md)。
 
-**改进方向**：① 用 LLM-as-judge 替代语义/规则代理；② 将 5 并发压测纳入回归脚本；③ 将评测纳入 CI 做回归门槛。
+**改进方向**：① 用大模型评测复核规则评测的近似误差（v2 已内置，待补充三模式实测对比）；② 将 5 并发压测纳入回归脚本；③ 将评测纳入 CI 做回归门槛。
 
 ---
 

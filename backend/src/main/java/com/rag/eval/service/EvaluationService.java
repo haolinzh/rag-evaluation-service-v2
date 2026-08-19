@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 @Service
@@ -33,6 +34,8 @@ public class EvaluationService {
     private final EvaluationRunRepo runRepo;
     private final ConfigService configService;
     private final ObjectMapper objectMapper;
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
 
     public EvaluationService(ChatService chatService,
                              DashScopeService dashScope,
@@ -63,8 +66,31 @@ public class EvaluationService {
         }
     }
 
+    public boolean isRunning() {
+        return running.get();
+    }
+
+    public void cancel() {
+        cancelRequested.set(true);
+    }
+
     public void runEvaluation(List<String> modes, boolean clearCache, JudgeConfig judgeConfig,
                               Consumer<Map<String, Object>> onEvent) {
+        if (!running.compareAndSet(false, true)) {
+            emit(onEvent, Map.of("type", "error", "message", "已有测评正在进行中，请稍候"));
+            return;
+        }
+        cancelRequested.set(false);
+        try {
+            doRunEvaluation(modes, clearCache, judgeConfig, onEvent);
+        } finally {
+            running.set(false);
+            cancelRequested.set(false);
+        }
+    }
+
+    private void doRunEvaluation(List<String> modes, boolean clearCache, JudgeConfig judgeConfig,
+                                 Consumer<Map<String, Object>> onEvent) {
         corpusService.ensureIngested(onEvent);
 
         List<String> effectiveModes = (modes == null || modes.isEmpty())
@@ -87,11 +113,19 @@ public class EvaluationService {
 
         int modeIndex = 0;
         for (String mode : effectiveModes) {
+            if (cancelRequested.get()) {
+                emit(onEvent, Map.of("type", "cancelled"));
+                return;
+            }
             emit(onEvent, Map.of("type", "mode_start", "mode", mode,
                 "index", modeIndex, "totalModes", effectiveModes.size()));
 
             List<EvaluationQuestionResult> modeResults = new ArrayList<>();
             for (int i = 0; i < questions.size(); i++) {
+                if (cancelRequested.get()) {
+                    emit(onEvent, Map.of("type", "cancelled"));
+                    return;
+                }
                 EvaluationQuestion q = questions.get(i);
                 emit(onEvent, Map.of("type", "question_start", "mode", mode,
                     "questionId", q.getId(), "index", i, "total", questions.size(),

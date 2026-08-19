@@ -39,6 +39,17 @@ public class EvaluationController {
         return evaluationService.listRuns();
     }
 
+    @GetMapping("/status")
+    public Map<String, Boolean> status() {
+        return Map.of("running", evaluationService.isRunning());
+    }
+
+    @PostMapping("/cancel")
+    public Map<String, Boolean> cancel() {
+        evaluationService.cancel();
+        return Map.of("cancelled", true);
+    }
+
     @GetMapping("/history/{id}")
     public EvaluationReport historyDetail(@PathVariable Long id) {
         return evaluationService.getRun(id);

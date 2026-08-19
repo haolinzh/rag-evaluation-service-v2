@@ -167,6 +167,15 @@ export async function fetchEvaluationHistory(): Promise<EvaluationRunMeta[]> {
   return data;
 }
 
+export async function fetchEvaluationStatus(): Promise<{ running: boolean }> {
+  const { data } = await api.get('/evaluation/status');
+  return data;
+}
+
+export async function cancelEvaluation(): Promise<void> {
+  await api.post('/evaluation/cancel');
+}
+
 export async function fetchEvaluationRun(id: number): Promise<EvaluationReport> {
   const { data } = await api.get(`/evaluation/history/${id}`);
   return data;
@@ -176,12 +185,14 @@ export async function runEvaluation(
   modes: string[],
   clearCache: boolean,
   judge: { judgeEnabled: boolean; judgeModel: string },
-  onEvent: (evt: EvaluationEvent) => void
+  onEvent: (evt: EvaluationEvent) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const resp = await fetch('/api/evaluation/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ modes, clearCache, judgeEnabled: judge.judgeEnabled, judgeModel: judge.judgeModel }),
+    signal,
   });
 
   if (!resp.ok || !resp.body) {

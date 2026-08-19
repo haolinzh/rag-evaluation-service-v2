@@ -252,7 +252,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
           </Row>
         </Card>
 
-        <Card title="评测（LLM-as-Judge）" size="small" style={{ marginBottom: 16 }}>
+        <Card title="评测（大模型评测）" size="small" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item label="评测模型" name="judgeModel" rules={[{ required: true }]}>
@@ -260,7 +260,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="默认启用 LLM 评测" name="judgeEnabled" valuePropName="checked">
+              <Form.Item label="默认启用大模型评测" name="judgeEnabled" valuePropName="checked">
                 <Switch />
               </Form.Item>
             </Col>

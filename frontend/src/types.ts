@@ -206,4 +206,5 @@ export type EvaluationEvent =
   | { type: 'question_error'; mode: string; questionId: string; index: number; total: number; question: string; message: string }
   | { type: 'mode_done'; mode: string; summary: EvaluationSummary }
   | { type: 'done'; report: EvaluationReport }
+  | { type: 'cancelled' }
   | { type: 'error'; message: string };
