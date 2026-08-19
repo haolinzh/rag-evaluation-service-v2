@@ -1,3 +1,10 @@
+# RAG 评测服务 v2
+
+> 本仓库是 [rag-evaluation-service](https://github.com/haolinzh/rag-evaluation-service) 的 v2 迭代版，在原 case study 交付版本基础上继续演进。
+> 交付基线：tag [`v1.0-delivery`](https://github.com/haolinzh/rag-evaluation-service-v2/tree/v1.0-delivery)（commit `d29e8eb`），后续功能迭代在 `main` 分支进行。
+
+---
+
 ## 目录
 
 - [界面预览](#界面预览)
