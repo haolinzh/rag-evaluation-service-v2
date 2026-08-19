@@ -14,6 +14,7 @@ public class EvaluationSummary {
     private double avgAnswerCompliance;
     private double avgRefusalAppropriate;
     private double avgStyleConsistent;
+    private Double avgAnswerRelevancy;
     private double p50LatencyMs;
     private double p95LatencyMs;
     private double avgLatencyMs;

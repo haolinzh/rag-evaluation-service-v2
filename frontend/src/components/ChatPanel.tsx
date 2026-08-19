@@ -36,7 +36,7 @@ interface StoredSession {
   title: string;
 }
 
-const STORAGE_KEY = 'rag-chat-sessions';
+const STORAGE_KEY = 'rag-chat-sessions-v2';
 
 const newSession = (): Session => ({
   id: crypto.randomUUID(),

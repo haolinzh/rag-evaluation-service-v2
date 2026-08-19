@@ -5,6 +5,7 @@ import com.rag.eval.model.EvaluationQuestion;
 import com.rag.eval.model.EvaluationReport;
 import com.rag.eval.model.EvaluationRequest;
 import com.rag.eval.model.EvaluationRunMeta;
+import com.rag.eval.model.JudgeConfig;
 import com.rag.eval.service.EvaluationService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -48,9 +49,11 @@ public class EvaluationController {
         SseEmitter emitter = new SseEmitter(0L);
         List<String> modes = request == null ? null : request.getModes();
         boolean clearCache = request == null || request.isClearCache();
+        JudgeConfig judge = request == null ? new JudgeConfig(null, null)
+            : new JudgeConfig(request.getJudgeEnabled(), request.getJudgeModel());
         executor.execute(() -> {
             try {
-                evaluationService.runEvaluation(modes, clearCache, event -> send(emitter, event));
+                evaluationService.runEvaluation(modes, clearCache, judge, event -> send(emitter, event));
             } finally {
                 emitter.complete();
             }

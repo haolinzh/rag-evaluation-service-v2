@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 public class Source {
     private String fileName;
     private String snippet;
+    private String content;
     private double score;
     private String sourceType;
 }

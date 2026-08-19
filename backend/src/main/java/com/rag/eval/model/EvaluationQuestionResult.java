@@ -22,5 +22,9 @@ public class EvaluationQuestionResult {
     private double answerCompliance;
     private double refusalAppropriate;
     private double styleConsistent;
+    private Double answerRelevancy;
+    private boolean judgeUsed;
+    private String judgeModel;
+    private String judgeReason;
     private String error;
 }

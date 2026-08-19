@@ -28,6 +28,7 @@ export interface ChunkConfig {
 export interface Source {
   fileName: string;
   snippet: string;
+  content?: string;
   score: number;
   sourceType: string;
 }
@@ -125,6 +126,7 @@ export interface SystemConfig {
     forbiddenKeywords: string;
   };
   cache: { enabled: boolean; ttlSeconds: number };
+  judge: { enabled: boolean; model: string };
   modelOptions: ModelOption[];
   embeddingDimension: number;
   apiKeyMasked?: string | null;
@@ -153,6 +155,10 @@ export interface EvaluationQuestionResult {
   answerCompliance: number;
   refusalAppropriate: number;
   styleConsistent: number;
+  answerRelevancy?: number | null;
+  judgeUsed?: boolean;
+  judgeModel?: string | null;
+  judgeReason?: string | null;
   error?: string;
 }
 
@@ -165,6 +171,7 @@ export interface EvaluationSummary {
   avgAnswerCompliance: number;
   avgRefusalAppropriate: number;
   avgStyleConsistent: number;
+  avgAnswerRelevancy?: number | null;
   p50LatencyMs: number;
   p95LatencyMs: number;
   avgLatencyMs: number;
@@ -172,6 +179,8 @@ export interface EvaluationSummary {
 
 export interface EvaluationReport {
   modes: string[];
+  judgeEnabled?: boolean;
+  judgeModel?: string | null;
   summaries: EvaluationSummary[];
   results: Record<string, EvaluationQuestionResult[]>;
 }
@@ -180,6 +189,8 @@ export interface EvaluationRunMeta {
   id: number;
   createdAt: string;
   modes: string[];
+  judgeEnabled?: boolean;
+  judgeModel?: string | null;
 }
 
 export type EvaluationEvent =

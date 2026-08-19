@@ -10,4 +10,6 @@ import java.util.List;
 public class EvaluationRequest {
     private List<String> modes;
     private boolean clearCache = true;
+    private Boolean judgeEnabled;
+    private String judgeModel;
 }

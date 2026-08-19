@@ -30,6 +30,8 @@ public class ConfigController {
     private static final String K_CACHE_ENABLED = "cache.semantic.enabled";
     private static final String K_CACHE_TTL = "cache.semantic.ttl-seconds";
     private static final String K_API_KEY = "dashscope.api-key";
+    private static final String K_JUDGE_ENABLED = "evaluation.judge-enabled";
+    private static final String K_JUDGE_MODEL = "dashscope.judge-model";
 
     private static final int EMBEDDING_DIMENSION = 1024;
 
@@ -90,6 +92,10 @@ public class ConfigController {
         changes.put(K_FORBIDDEN, s.forbiddenKeywords());
         changes.put(K_CACHE_ENABLED, String.valueOf(c.enabled()));
         changes.put(K_CACHE_TTL, String.valueOf(c.ttlSeconds()));
+        if (dto.judge() != null) {
+            changes.put(K_JUDGE_ENABLED, String.valueOf(dto.judge().enabled()));
+            changes.put(K_JUDGE_MODEL, dto.judge().model());
+        }
 
         config.putAll(changes);
         return ResponseEntity.ok(buildDto());
@@ -137,6 +143,9 @@ public class ConfigController {
             new SystemConfigDto.Cache(
                 config.getBool(K_CACHE_ENABLED, true),
                 config.getInt(K_CACHE_TTL, 3600)),
+            new SystemConfigDto.Judge(
+                config.getBool(K_JUDGE_ENABLED, true),
+                config.get(K_JUDGE_MODEL, "qwen-turbo")),
             MODEL_OPTIONS,
             EMBEDDING_DIMENSION,
             maskApiKey(config.get(K_API_KEY, "")));
@@ -150,7 +159,7 @@ public class ConfigController {
 
     private String validate(SystemConfigDto dto) {
         if (dto == null || dto.retrieval() == null || dto.models() == null
-                || dto.safety() == null || dto.cache() == null) {
+                || dto.safety() == null || dto.cache() == null || dto.judge() == null) {
             return "配置不完整";
         }
         SystemConfigDto.Retrieval r = dto.retrieval();
@@ -171,6 +180,7 @@ public class ConfigController {
         if (!isAllowedModel("chat", dto.models().chat())) return "不支持的对话模型: " + dto.models().chat();
         if (!isAllowedModel("embedding", dto.models().embedding())) return "不支持的向量模型: " + dto.models().embedding();
         if (!isAllowedModel("rerank", dto.models().rerank())) return "不支持的重排模型: " + dto.models().rerank();
+        if (!isAllowedModel("chat", dto.judge().model())) return "不支持的评测模型: " + dto.judge().model();
         return null;
     }
 

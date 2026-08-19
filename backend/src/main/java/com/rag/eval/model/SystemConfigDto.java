@@ -7,6 +7,7 @@ public record SystemConfigDto(
     Models models,
     Safety safety,
     Cache cache,
+    Judge judge,
     List<ModelOption> modelOptions,
     int embeddingDimension,
     String apiKeyMasked
@@ -20,6 +21,8 @@ public record SystemConfigDto(
                          double outOfScopeThreshold, String forbiddenKeywords) {}
 
     public record Cache(boolean enabled, int ttlSeconds) {}
+
+    public record Judge(boolean enabled, String model) {}
 
     public record ModelOption(String group, String id, String label, Integer dimensions) {}
 }

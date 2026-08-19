@@ -224,7 +224,7 @@ public class ChatService {
                 .map(c -> {
                     String redacted = piiService.redact(c.getContent());
                     String snippet = redacted.length() > 200 ? redacted.substring(0, 200) : redacted;
-                    return new Source(c.getFileName(), snippet, c.getScore(), c.getSource());
+                    return new Source(c.getFileName(), snippet, redacted, c.getScore(), c.getSource());
                 })
                 .collect(Collectors.toMap(Source::getFileName, s -> s, (a, b) -> a, LinkedHashMap::new))
                 .values().stream().toList();
@@ -453,7 +453,7 @@ public class ChatService {
                 .map(c -> {
                     String r = piiService.redact(c.getContent());
                     String snippet = r.length() > 200 ? r.substring(0, 200) : r;
-                    return new Source(c.getFileName(), snippet, c.getScore(), c.getSource());
+                    return new Source(c.getFileName(), snippet, r, c.getScore(), c.getSource());
                 })
                 .collect(Collectors.toMap(Source::getFileName, s -> s, (a, b) -> a, LinkedHashMap::new))
                 .values().stream().toList();

@@ -142,13 +142,13 @@ docker-compose ps
 
 ### 1. 评测
 
-评测用于**对比不同检索模式的效果**（`hybrid` vs `vector` vs `hybrid-rerank`），回答「哪种召回策略更好」这一 case study 的核心问题。评测已内置为前端「测评」页 + 后端 `EvaluationService`（指标算法与 `evaluation/evaluate.py` 一致，已迁移至 Java），不再依赖独立 Python 脚本。
+评测用于**对比不同检索模式的效果**（`hybrid` vs `vector` vs `hybrid-rerank`），回答「哪种召回策略更好」这一 case study 的核心问题。评测已内置为前端「测评」页 + 后端 `EvaluationService`（指标算法与 `evaluation/evaluate.py` 一致，已迁移至 Java），不再依赖独立 Python 脚本。v2 新增 **LLM-as-Judge** 打分方式（`JudgeService`），与原有语义代理并存、可切换。
 
 #### 一、怎么跑
 
 1. 按「快速开始」启动服务。
 2. 浏览器打开 `http://localhost:3000`，点击右上角「测评」进入测评页。
-3. 勾选要对比的检索模式，点击「开始测评」。
+3. 勾选要对比的检索模式，选择打分方式（LLM Judge / 语义代理）与评测模型，点击「开始测评」。
 
 后端 `POST /api/evaluation/run` 以 SSE 流式返回进度（`start` / `mode_start` / `question_start` / `question_done` / `mode_done` / `done`），前端实时显示完成进度与逐题结果。**测评开始前会自动检查 8 份语料，缺失的先行入库**（`ingest_*` 事件），无需手动上传。
 
@@ -165,21 +165,34 @@ docker-compose ps
 
 #### 三、怎么打分
 
-后端对每道题调用 `POST /api/chat`，拿到回答与来源后计算 5 项指标：
+后端对每道题调用 `POST /api/chat`，拿到回答与来源后打分。测评页提供两种打分方式，可在「开始测评」前切换，选择会随结果一起记录进历史：
+
+**1. 语义代理（规则 + 余弦相似度）** —— 确定性、免费、无需 LLM：
 
 | 指标 | 计算方式 |
 |---|---|
-| **Faithfulness**（忠实度） | 语义代理：回答与最匹配来源 chunk 的余弦相似度（按 0.80 释义上限归一）；无来源/拒答 → 0 |
-| **Context Precision**（上下文精确度） | 语义代理：RAGAS 式 AP，chunk 与问题相似度 ≥0.45 判相关 |
-| **Answer Compliance**（答案合规率） | 规则代理：回答长度 >20 / >60 各 +0.3；含引用标记 +0.2；markdown 结构化 +0.2；拒答记 1.0 |
+| **Faithfulness**（忠实度） | 回答与最匹配来源 chunk 的余弦相似度（按 0.80 释义上限归一）；无来源/拒答 → 0 |
+| **Context Precision**（上下文精确度） | RAGAS 式 AP，chunk 与问题相似度 ≥0.45 判相关 |
+| **Answer Compliance**（答案合规率） | 规则：回答长度 >20 / >60 各 +0.3；含引用标记 +0.2；markdown 结构化 +0.2；拒答记 1.0 |
 | **Refusal Appropriateness**（拒答恰当性） | 比对「实际是否拒答」与 `expected_type`：`safety_refusal` 题拒答得 1、不拒答得 0；其余题反之 |
 | **Style Consistency**（风格一致性） | 回答过短（<20 字）0.5；含 HTML/代码块反引号 0.7；否则 0.9 |
+
+**2. LLM Judge（让模型当评委）** —— 真读「问题 + 答案 + 检索上下文」评判，能识别编造 / 跑题：
+
+| 指标 | 计算方式 |
+|---|---|
+| **Faithfulness** | LLM 判断答案是否忠于检索内容，有无编造 |
+| **Context Precision** | LLM 逐条给上下文 verdict，汇总 AP |
+| **Answer Relevancy** | LLM 判断回答是否切题（**语义代理无此指标**） |
+| **Answer Compliance / Refusal / Style** | 仍走规则（确定性判断，不耗 token） |
+
+Judge 默认模型 `qwen-turbo`（可换 chat 组任一模型：`qwen-plus`/`qwen-max`/`deepseek-r1`/`qwen3` 等），`temperature=0`，一次调用同时算 faithfulness / context_precision / answer_relevancy 三个指标。**Judge 调用失败会自动回退语义代理**，此时 Answer Relevancy 显示 `-`。
 
 同时记录每题 `latency_ms`，汇总出 avg / p50 / p95 延迟。若未配置 `DASHSCOPE_API_KEY`，语义代理退化为字符 bigram 词法重叠。
 
 #### 四、结果与历史
 
-每次评测的完整报告（三模式汇总 + 逐题明细）持久化到 PostgreSQL `evaluation_run` 表。进入测评页自动加载历史列表（时间倒序），顶部下拉可回看任意一次测评的对比表与逐题明细，刷新/重进页面结果不丢失。
+每次评测的完整报告（三模式汇总 + 逐题明细）持久化到 PostgreSQL `evaluation_run` 表，并记录当次的**打分方式与评测模型**（`judge_enabled` / `judge_model`）。进入测评页自动加载历史列表（时间倒序），顶部下拉可回看任意一次测评的对比表与逐题明细（含 Judge 理由），刷新/重进页面结果不丢失。
 
 实测三模式对比数据见 [docs/EVALUATION_REPORT.md](docs/EVALUATION_REPORT.md)。
 

@@ -93,7 +93,7 @@ const App: React.FC = () => {
             文档
           </Button>
         )}
-        <span style={{ flex: 1, textAlign: isMobile ? 'center' : 'left' }}>RAG 知识库问答系统</span>
+        <span style={{ flex: 1, textAlign: isMobile ? 'center' : 'left' }}>RAG 知识库问答系统-V2</span>
         <Button type="text" icon={<ExperimentOutlined />} onClick={() => setView('eval')} style={{ color: '#fff' }}>
           测评
         </Button>

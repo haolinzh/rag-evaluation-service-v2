@@ -10,6 +10,8 @@ import java.util.Map;
 @NoArgsConstructor
 public class EvaluationReport {
     private List<String> modes;
+    private boolean judgeEnabled;
+    private String judgeModel;
     private List<EvaluationSummary> summaries;
     private Map<String, List<EvaluationQuestionResult>> results;
 }

@@ -19,6 +19,8 @@ interface FormValues {
   chat: string;
   embedding: string;
   rerank: string;
+  judgeModel: string;
+  judgeEnabled: boolean;
   minSimilarity: number;
   enableOutOfScopeCheck: boolean;
   outOfScopeThreshold: number;
@@ -50,6 +52,8 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
           chat: c.models.chat,
           embedding: c.models.embedding,
           rerank: c.models.rerank,
+          judgeModel: c.judge.model,
+          judgeEnabled: c.judge.enabled,
           minSimilarity: c.safety.minSimilarity,
           enableOutOfScopeCheck: c.safety.enableOutOfScopeCheck,
           outOfScopeThreshold: c.safety.outOfScopeThreshold,
@@ -83,6 +87,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
         similarityThreshold: v.similarityThreshold,
       },
       models: { chat: v.chat, embedding: v.embedding, rerank: v.rerank },
+      judge: { enabled: v.judgeEnabled, model: v.judgeModel },
       safety: {
         minSimilarity: v.minSimilarity,
         enableOutOfScopeCheck: v.enableOutOfScopeCheck,
@@ -242,6 +247,21 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
             <Col span={8}>
               <Form.Item label="精排模型" name="rerank" rules={[{ required: true }]}>
                 <Select options={modelGroup('rerank')} />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
+
+        <Card title="评测（LLM-as-Judge）" size="small" style={{ marginBottom: 16 }}>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="评测模型" name="judgeModel" rules={[{ required: true }]}>
+                <Select options={modelGroup('chat')} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="默认启用 LLM 评测" name="judgeEnabled" valuePropName="checked">
+                <Switch />
               </Form.Item>
             </Col>
           </Row>

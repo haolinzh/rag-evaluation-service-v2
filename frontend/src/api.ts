@@ -175,12 +175,13 @@ export async function fetchEvaluationRun(id: number): Promise<EvaluationReport> 
 export async function runEvaluation(
   modes: string[],
   clearCache: boolean,
+  judge: { judgeEnabled: boolean; judgeModel: string },
   onEvent: (evt: EvaluationEvent) => void
 ): Promise<void> {
   const resp = await fetch('/api/evaluation/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ modes, clearCache }),
+    body: JSON.stringify({ modes, clearCache, judgeEnabled: judge.judgeEnabled, judgeModel: judge.judgeModel }),
   });
 
   if (!resp.ok || !resp.body) {

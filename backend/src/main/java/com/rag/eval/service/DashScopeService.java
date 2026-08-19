@@ -42,6 +42,10 @@ public class DashScopeService {
     }
 
     public ChatResult chat(String systemPrompt, String userMessage) {
+        return chatWithModel(getChatModel(), 0.3, systemPrompt, userMessage);
+    }
+
+    public ChatResult chatWithModel(String model, double temperature, String systemPrompt, String userMessage) {
         try {
             String apiKey = resolveApiKey();
 
@@ -51,10 +55,10 @@ public class DashScopeService {
             );
             Map<String, Object> parameters = new LinkedHashMap<>();
             parameters.put("result_format", "message");
-            parameters.put("temperature", 0.3);
+            parameters.put("temperature", temperature);
 
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("model", getChatModel());
+            body.put("model", model);
             body.put("input", Map.of("messages", messages));
             body.put("parameters", parameters);
 
@@ -180,6 +184,7 @@ public class DashScopeService {
     public List<Double> embed(String text) {
         try {
             TextEmbeddingParam param = TextEmbeddingParam.builder()
+                .apiKey(resolveApiKey())
                 .model(config.get("dashscope.embedding-model", "text-embedding-v3"))
                 .texts(List.of(text))
                 .build();
@@ -197,6 +202,7 @@ public class DashScopeService {
     public List<List<Double>> embedBatch(List<String> texts) {
         try {
             TextEmbeddingParam param = TextEmbeddingParam.builder()
+                .apiKey(resolveApiKey())
                 .model(config.get("dashscope.embedding-model", "text-embedding-v3"))
                 .texts(texts)
                 .build();

@@ -24,6 +24,12 @@ public class EvaluationRun {
     @Column(name = "modes", columnDefinition = "TEXT")
     private String modes;
 
+    @Column(name = "judge_enabled")
+    private Boolean judgeEnabled;
+
+    @Column(name = "judge_model")
+    private String judgeModel;
+
     @Column(name = "report_json", columnDefinition = "TEXT")
     private String reportJson;
 

@@ -22,25 +22,33 @@ public class EvaluationService {
 
     private static final double RELEVANCE_THRESHOLD = 0.45;
     private static final double PARAPHRASE_CEILING = 0.80;
+    private static final String K_JUDGE_ENABLED = "evaluation.judge-enabled";
+    private static final String K_JUDGE_MODEL = "dashscope.judge-model";
 
     private final ChatService chatService;
     private final DashScopeService dashScope;
+    private final JudgeService judgeService;
     private final SemanticCacheService cacheService;
     private final CorpusService corpusService;
     private final EvaluationRunRepo runRepo;
+    private final ConfigService configService;
     private final ObjectMapper objectMapper;
 
     public EvaluationService(ChatService chatService,
                              DashScopeService dashScope,
+                             JudgeService judgeService,
                              SemanticCacheService cacheService,
                              CorpusService corpusService,
                              EvaluationRunRepo runRepo,
+                             ConfigService configService,
                              ObjectMapper objectMapper) {
         this.chatService = chatService;
         this.dashScope = dashScope;
+        this.judgeService = judgeService;
         this.cacheService = cacheService;
         this.corpusService = corpusService;
         this.runRepo = runRepo;
+        this.configService = configService;
         this.objectMapper = objectMapper;
     }
 
@@ -55,7 +63,8 @@ public class EvaluationService {
         }
     }
 
-    public void runEvaluation(List<String> modes, boolean clearCache, Consumer<Map<String, Object>> onEvent) {
+    public void runEvaluation(List<String> modes, boolean clearCache, JudgeConfig judgeConfig,
+                              Consumer<Map<String, Object>> onEvent) {
         corpusService.ensureIngested(onEvent);
 
         List<String> effectiveModes = (modes == null || modes.isEmpty())
@@ -65,6 +74,8 @@ public class EvaluationService {
         if (clearCache) {
             cacheService.clear();
         }
+
+        JudgeConfig judge = resolveJudge(judgeConfig);
 
         List<EvaluationQuestion> questions = loadQuestions();
         Embedder embedder = new Embedder();
@@ -88,7 +99,7 @@ public class EvaluationService {
 
                 EvaluationQuestionResult result;
                 try {
-                    result = evaluateOne(q, mode, embedder);
+                    result = evaluateOne(q, mode, embedder, judge);
                 } catch (Exception e) {
                     result = new EvaluationQuestionResult();
                     result.setQuestionId(q.getId());
@@ -116,6 +127,8 @@ public class EvaluationService {
 
         EvaluationReport report = new EvaluationReport();
         report.setModes(effectiveModes);
+        report.setJudgeEnabled(judge.enabled());
+        report.setJudgeModel(judge.model());
         report.setSummaries(summaries);
         report.setResults(allResults);
         saveReport(report);
@@ -127,9 +140,10 @@ public class EvaluationService {
             .map(r -> {
                 try {
                     List<String> modes = objectMapper.readValue(r.getModes(), new TypeReference<List<String>>() {});
-                    return new EvaluationRunMeta(r.getId(), r.getCreatedAt(), modes);
+                    boolean judgeEnabled = r.getJudgeEnabled() != null && r.getJudgeEnabled();
+                    return new EvaluationRunMeta(r.getId(), r.getCreatedAt(), modes, judgeEnabled, r.getJudgeModel());
                 } catch (Exception e) {
-                    return new EvaluationRunMeta(r.getId(), r.getCreatedAt(), List.of());
+                    return new EvaluationRunMeta(r.getId(), r.getCreatedAt(), List.of(), false, null);
                 }
             })
             .toList();
@@ -151,6 +165,8 @@ public class EvaluationService {
         try {
             EvaluationRun run = new EvaluationRun();
             run.setModes(objectMapper.writeValueAsString(report.getModes()));
+            run.setJudgeEnabled(report.isJudgeEnabled());
+            run.setJudgeModel(report.getJudgeModel());
             run.setReportJson(objectMapper.writeValueAsString(report));
             runRepo.save(run);
         } catch (Exception e) {
@@ -163,7 +179,15 @@ public class EvaluationService {
         return m.toLowerCase();
     }
 
-    private EvaluationQuestionResult evaluateOne(EvaluationQuestion q, String mode, Embedder embedder) {
+    private JudgeConfig resolveJudge(JudgeConfig judgeConfig) {
+        boolean enabled = judgeConfig.enabled() != null
+            ? judgeConfig.enabled() : configService.getBool(K_JUDGE_ENABLED, true);
+        String model = (judgeConfig.model() != null && !judgeConfig.model().isBlank())
+            ? judgeConfig.model() : configService.get(K_JUDGE_MODEL, "qwen-turbo");
+        return new JudgeConfig(enabled, model);
+    }
+
+    private EvaluationQuestionResult evaluateOne(EvaluationQuestion q, String mode, Embedder embedder, JudgeConfig judge) {
         long start = System.currentTimeMillis();
         ChatResponse resp = chatService.ask(q.getQuestion(), "eval-" + mode + "-" + q.getId(), mode);
         double latencyMs = System.currentTimeMillis() - start;
@@ -171,6 +195,11 @@ public class EvaluationService {
         List<String> snippets = resp.getSources() == null ? List.of()
             : resp.getSources().stream().map(Source::getSnippet)
                 .filter(s -> s != null && !s.isBlank()).toList();
+
+        List<String> contexts = resp.getSources() == null ? List.of()
+            : resp.getSources().stream()
+                .map(s -> (s.getContent() != null && !s.getContent().isBlank()) ? s.getContent() : s.getSnippet())
+                .filter(t -> t != null && !t.isBlank()).toList();
 
         // Pre-warm the embedding cache for everything this question needs.
         List<String> toEmbed = new ArrayList<>();
@@ -190,8 +219,30 @@ public class EvaluationService {
         r.setSources(resp.getSources());
         r.setLatencyMs(round(latencyMs, 1));
 
-        r.setFaithfulness(round(faithfulness(resp.getContent(), resp.isRefusal(), snippets, embedder), 3));
-        r.setContextPrecision(round(contextPrecision(snippets, q.getQuestion(), embedder), 3));
+        boolean judgeUsed = false;
+        if (judge.enabled()) {
+            try {
+                JudgeService.JudgeResult jr = judgeService.judge(judge.model(), q.getQuestion(), resp.getContent(), contexts);
+                r.setFaithfulness(round(jr.faithfulness(), 3));
+                r.setContextPrecision(round(jr.contextPrecision(), 3));
+                if (jr.answerRelevancy() != null) {
+                    r.setAnswerRelevancy(round(jr.answerRelevancy(), 3));
+                }
+                r.setJudgeUsed(true);
+                r.setJudgeModel(judge.model());
+                r.setJudgeReason(jr.reason());
+                judgeUsed = true;
+            } catch (Exception e) {
+                judgeUsed = false;
+            }
+        }
+
+        if (!judgeUsed) {
+            r.setFaithfulness(round(faithfulness(resp.getContent(), resp.isRefusal(), snippets, embedder), 3));
+            r.setContextPrecision(round(contextPrecision(snippets, q.getQuestion(), embedder), 3));
+            r.setAnswerRelevancy(null);
+        }
+
         r.setAnswerCompliance(round(compliance(resp.getContent(), resp.isRefusal()), 3));
         r.setRefusalAppropriate(round(refusalAppropriate(resp.isRefusal(), q.getExpectedType()), 3));
         r.setStyleConsistent(round(style(resp.getContent()), 3));
@@ -296,6 +347,12 @@ public class EvaluationService {
         s.setAvgAnswerCompliance(round(valid.stream().mapToDouble(EvaluationQuestionResult::getAnswerCompliance).sum() / n, 3));
         s.setAvgRefusalAppropriate(round(valid.stream().mapToDouble(EvaluationQuestionResult::getRefusalAppropriate).sum() / n, 3));
         s.setAvgStyleConsistent(round(valid.stream().mapToDouble(EvaluationQuestionResult::getStyleConsistent).sum() / n, 3));
+        List<Double> relevancies = valid.stream()
+            .map(EvaluationQuestionResult::getAnswerRelevancy)
+            .filter(v -> v != null)
+            .toList();
+        s.setAvgAnswerRelevancy(relevancies.isEmpty() ? null
+            : round(relevancies.stream().mapToDouble(Double::doubleValue).sum() / relevancies.size(), 3));
         s.setP50LatencyMs(round(p50, 1));
         s.setP95LatencyMs(round(p95, 1));
         s.setAvgLatencyMs(round(latencies.stream().mapToDouble(Double::doubleValue).sum() / n, 1));

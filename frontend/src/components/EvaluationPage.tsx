@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Button, Typography, Space, Card, Checkbox, Switch, Progress, Table, Tabs, Tag, Alert, Spin, Empty, Select,
+  Button, Typography, Space, Card, Checkbox, Switch, Progress, Table, Tabs, Tag, Alert, Spin, Empty, Select, Segmented,
 } from 'antd';
 import { ArrowLeftOutlined, ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { runEvaluation, fetchEvaluationQuestions, fetchEvaluationHistory, fetchEvaluationRun } from '../api';
+import { runEvaluation, fetchEvaluationQuestions, fetchEvaluationHistory, fetchEvaluationRun, fetchConfig } from '../api';
 import type { EvaluationEvent, EvaluationSummary, EvaluationQuestionResult, EvaluationRunMeta } from '../types';
 
 interface Props {
@@ -24,6 +24,7 @@ const METRICS: { key: MetricKey; label: string; digits: number }[] = [
   { key: 'avgAnswerCompliance', label: 'Answer Compliance', digits: 3 },
   { key: 'avgRefusalAppropriate', label: 'Refusal Appropriateness', digits: 3 },
   { key: 'avgStyleConsistent', label: 'Style Consistency', digits: 3 },
+  { key: 'avgAnswerRelevancy', label: 'Answer Relevancy', digits: 3 },
   { key: 'avgLatencyMs', label: 'Avg Latency (ms)', digits: 1 },
   { key: 'p50LatencyMs', label: 'P50 Latency (ms)', digits: 1 },
   { key: 'p95LatencyMs', label: 'P95 Latency (ms)', digits: 1 },
@@ -34,11 +35,18 @@ const fmt = (v: number | undefined | null, digits: number) =>
 
 const formatTime = (iso: string) => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
 
-const runLabel = (h: EvaluationRunMeta) => `#${h.id} · ${formatTime(h.createdAt)} · ${h.modes.join(' / ')}`;
+const runLabel = (h: EvaluationRunMeta) => {
+  const base = `#${h.id} · ${formatTime(h.createdAt)} · ${h.modes.join(' / ')}`;
+  if (h.judgeEnabled == null && h.judgeModel == null) return base;
+  return `${base} · ${h.judgeEnabled ? `Judge ${h.judgeModel ?? ''}` : '代理'}`;
+};
 
 const EvaluationPage: React.FC<Props> = ({ onBack }) => {
   const [modes, setModes] = useState<string[]>(['vector', 'hybrid', 'hybrid-rerank']);
   const [clearCache, setClearCache] = useState(true);
+  const [judgeEnabled, setJudgeEnabled] = useState(true);
+  const [judgeModel, setJudgeModel] = useState('qwen-turbo');
+  const [judgeModelOptions, setJudgeModelOptions] = useState<{ label: string; value: string }[]>([]);
   const [running, setRunning] = useState(false);
   const [questionCount, setQuestionCount] = useState<number | null>(null);
   const [currentMode, setCurrentMode] = useState<string | null>(null);
@@ -61,6 +69,14 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
     fetchEvaluationHistory().then((list) => {
       setHistory(list);
       if (list.length > 0) setSelectedRunId(list[0].id);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchConfig().then((c) => {
+      setJudgeEnabled(c.judge.enabled);
+      setJudgeModel(c.judge.model);
+      setJudgeModelOptions(c.modelOptions.filter((o) => o.group === 'chat').map((o) => ({ label: o.label, value: o.id })));
     }).catch(() => {});
   }, []);
 
@@ -155,7 +171,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
     setCurrentQuestion(null);
     setIngestStatus(null);
     try {
-      await runEvaluation(runModes, clearCache, handleEvent);
+      await runEvaluation(runModes, clearCache, { judgeEnabled, judgeModel }, handleEvent);
     } catch (e: any) {
       setError(e?.message ?? '测评请求失败');
       setRunning(false);
@@ -189,6 +205,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
     { title: 'Answer Compliance', dataIndex: 'answerCompliance', key: 'answerCompliance', width: 130, render: (v: number) => fmt(v, 2) },
     { title: 'Refusal Appropriateness', dataIndex: 'refusalAppropriate', key: 'refusalAppropriate', width: 150, render: (v: number) => fmt(v, 2) },
     { title: 'Style Consistency', dataIndex: 'styleConsistent', key: 'styleConsistent', width: 120, render: (v: number) => fmt(v, 2) },
+    { title: 'Answer Relevancy', dataIndex: 'answerRelevancy', key: 'answerRelevancy', width: 130, render: (v: number | null | undefined) => fmt(v, 2) },
   ];
 
   const expandedRowRender = (r: EvaluationQuestionResult) => (
@@ -198,6 +215,14 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
         <Typography.Text strong>回答：</Typography.Text>
         <span style={{ whiteSpace: 'pre-wrap' }}>{r.answer || '(空)'}</span>
       </Typography.Paragraph>
+      {r.judgeUsed && (
+        <div style={{ marginBottom: 8 }}>
+          <Tag color="purple">LLM Judge · {r.judgeModel ?? ''}</Tag>
+          {r.judgeReason && (
+            <Typography.Text type="secondary" style={{ display: 'block', whiteSpace: 'pre-wrap' }}>{r.judgeReason}</Typography.Text>
+          )}
+        </div>
+      )}
       {r.sources && r.sources.length > 0 && (
         <div>
           <Typography.Text strong>来源：</Typography.Text>
@@ -245,6 +270,26 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
             value={modes}
             onChange={(vals) => setModes(vals as string[])}
             disabled={running}
+          />
+        </Space>
+        <Space wrap size="middle" style={{ marginTop: 12 }}>
+          <span>打分方式：</span>
+          <Segmented
+            options={[
+              { label: 'LLM Judge', value: 'judge' },
+              { label: '语义代理', value: 'proxy' },
+            ]}
+            value={judgeEnabled ? 'judge' : 'proxy'}
+            onChange={(v) => setJudgeEnabled(v === 'judge')}
+            disabled={running}
+          />
+          <span>评测模型：</span>
+          <Select
+            style={{ minWidth: 200 }}
+            value={judgeModel}
+            onChange={setJudgeModel}
+            options={judgeModelOptions}
+            disabled={running || !judgeEnabled}
           />
         </Space>
         <Space wrap size="middle" style={{ marginTop: 12 }}>
