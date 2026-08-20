@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Select, InputNumber, Switch, Button, Typography, Space, Card, Alert, message, Row, Col, Spin, Input } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, SettingOutlined, KeyOutlined } from '@ant-design/icons';
-import { fetchConfig, updateConfig, updateApiKey } from '../api';
+import { Form, Select, InputNumber, Switch, Button, Typography, Space, Card, Alert, message, Row, Col, Spin, Input, Radio, Popconfirm } from 'antd';
+import { ArrowLeftOutlined, SaveOutlined, SettingOutlined, KeyOutlined, DatabaseOutlined, ReloadOutlined } from '@ant-design/icons';
+import { fetchConfig, updateConfig, updateApiKey, rebuildVectorIndex } from '../api';
 import type { SystemConfig } from '../types';
 
 interface Props {
@@ -21,6 +21,16 @@ interface FormValues {
   rerank: string;
   judgeModel: string;
   judgeEnabled: boolean;
+  judgeTemperature: number;
+  temperature: number;
+  topP: number;
+  maxTokens: number;
+  vectorBackend: 'pgvector' | 'elasticsearch';
+  pgIndexType: 'ivfflat' | 'hnsw';
+  pgLists: number;
+  pgProbes: number;
+  pgEfSearch: number;
+  esNumCandidates: number;
   minSimilarity: number;
   enableOutOfScopeCheck: boolean;
   outOfScopeThreshold: number;
@@ -35,6 +45,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
   const [saving, setSaving] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [savingKey, setSavingKey] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
 
   const embeddingValue = Form.useWatch('embedding', form);
 
@@ -54,6 +65,16 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
           rerank: c.models.rerank,
           judgeModel: c.judge.model,
           judgeEnabled: c.judge.enabled,
+          judgeTemperature: c.judge.temperature,
+          temperature: c.generation.temperature,
+          topP: c.generation.topP,
+          maxTokens: c.generation.maxTokens,
+          vectorBackend: c.vector.backend,
+          pgIndexType: c.vector.pgvector.indexType,
+          pgLists: c.vector.pgvector.lists,
+          pgProbes: c.vector.pgvector.probes,
+          pgEfSearch: c.vector.pgvector.efSearch,
+          esNumCandidates: c.vector.elasticsearch.numCandidates,
           minSimilarity: c.safety.minSimilarity,
           enableOutOfScopeCheck: c.safety.enableOutOfScopeCheck,
           outOfScopeThreshold: c.safety.outOfScopeThreshold,
@@ -87,7 +108,13 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
         similarityThreshold: v.similarityThreshold,
       },
       models: { chat: v.chat, embedding: v.embedding, rerank: v.rerank },
-      judge: { enabled: v.judgeEnabled, model: v.judgeModel },
+      judge: { enabled: v.judgeEnabled, model: v.judgeModel, temperature: v.judgeTemperature },
+      generation: { temperature: v.temperature, topP: v.topP, maxTokens: v.maxTokens },
+      vector: {
+        backend: v.vectorBackend,
+        pgvector: { indexType: v.pgIndexType, lists: v.pgLists, probes: v.pgProbes, efSearch: v.pgEfSearch },
+        elasticsearch: { numCandidates: v.esNumCandidates },
+      },
       safety: {
         minSimilarity: v.minSimilarity,
         enableOutOfScopeCheck: v.enableOutOfScopeCheck,
@@ -143,6 +170,18 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
     }
   };
 
+  const onRebuild = async () => {
+    setRebuilding(true);
+    try {
+      const r = await rebuildVectorIndex();
+      message.success(`向量索引已重建：${r.documentCount} 个文档，${r.chunkCount} 个分块`);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error ?? '重建失败');
+    } finally {
+      setRebuilding(false);
+    }
+  };
+
   if (!config) {
     return (
       <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}>
@@ -152,7 +191,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}>
+    <div style={{ height: '100vh', overflowY: 'auto', padding: 24, maxWidth: 960, margin: '0 auto', boxSizing: 'border-box' }}>
       <Space style={{ marginBottom: 16 }} align="center">
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0 }}><SettingOutlined /> 系统配置</Typography.Title>
@@ -252,14 +291,107 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
           </Row>
         </Card>
 
+        <Card title="生成参数（对话）" size="small" style={{ marginBottom: 16 }}>
+          <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+            作用于知识库问答生成。top_p 设为 1.0 时以 temperature 为准；max_tokens 为 0 表示不限制长度。
+          </Typography.Text>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item label="temperature（采样温度）" name="temperature" rules={[{ required: true }]}>
+                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="top_p（核采样）" name="topP" rules={[{ required: true }]}>
+                <InputNumber min={0.01} max={1} step={0.05} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="max_tokens（最大长度，0=不限制）" name="maxTokens" rules={[{ required: true }]}>
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
+
+        <Card
+          title={<span><DatabaseOutlined /> 向量数据库</span>}
+          size="small"
+          style={{ marginBottom: 16 }}
+          extra={
+            <Popconfirm
+              title="重建向量索引？"
+              description="将清空并按当前索引参数重新入库所有文档（双写 pgvector 与 Elasticsearch）。"
+              onConfirm={onRebuild}
+              okText="重建"
+              cancelText="取消"
+            >
+              <Button icon={<ReloadOutlined />} loading={rebuilding}>重建向量索引</Button>
+            </Popconfirm>
+          }
+        >
+          <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+            双写 pgvector 与 Elasticsearch。「当前向量后端」决定实际用于语义检索的后端，保存后立即切换（双写，无需重新入库）；下方两个参数区分别配置各自后端。索引类型 / lists 等建索引参数改动后需点击「重建向量索引」。
+          </Typography.Text>
+          <Form.Item
+            label="当前向量后端（实际检索用）"
+            name="vectorBackend"
+            rules={[{ required: true }]}
+            extra="保存后语义检索立即切换到所选后端"
+          >
+            <Radio.Group optionType="button" buttonStyle="solid">
+              <Radio.Button value="pgvector">PgVector</Radio.Button>
+              <Radio.Button value="elasticsearch">Elasticsearch</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+
+          <Typography.Text strong style={{ display: 'block', margin: '12px 0 8px' }}>PgVector 参数</Typography.Text>
+          <Row gutter={16}>
+            <Col span={6}>
+              <Form.Item label="索引类型" name="pgIndexType" rules={[{ required: true }]}>
+                <Select options={[{ label: 'IVFFlat', value: 'ivfflat' }, { label: 'HNSW', value: 'hnsw' }]} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item label="lists" name="pgLists" rules={[{ required: true }]}>
+                <InputNumber min={1} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item label="probes" name="pgProbes" rules={[{ required: true }]}>
+                <InputNumber min={1} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item label="ef_search" name="pgEfSearch" rules={[{ required: true }]}>
+                <InputNumber min={1} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Typography.Text strong style={{ display: 'block', margin: '12px 0 8px' }}>Elasticsearch 参数</Typography.Text>
+          <Row gutter={16}>
+            <Col span={6}>
+              <Form.Item label="num_candidates" name="esNumCandidates" rules={[{ required: true }]}>
+                <InputNumber min={1} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
+
         <Card title="评测（大模型评测）" size="small" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item label="评测模型" name="judgeModel" rules={[{ required: true }]}>
                 <Select options={modelGroup('chat')} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={8}>
+              <Form.Item label="评测 temperature" name="judgeTemperature" rules={[{ required: true }]}>
+                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
               <Form.Item label="默认启用大模型评测" name="judgeEnabled" valuePropName="checked">
                 <Switch />
               </Form.Item>

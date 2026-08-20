@@ -157,6 +157,11 @@ export async function updateApiKey(apiKey: string): Promise<SystemConfig> {
   return data;
 }
 
+export async function rebuildVectorIndex(): Promise<{ documentCount: number; chunkCount: number }> {
+  const { data } = await api.post('/config/rebuild-vector-index');
+  return data;
+}
+
 export async function fetchEvaluationQuestions(): Promise<EvaluationQuestion[]> {
   const { data } = await api.get('/evaluation/questions');
   return data;

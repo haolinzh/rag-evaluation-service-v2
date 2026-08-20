@@ -123,7 +123,7 @@ const LogManagement: React.FC<Props> = ({ onBack }) => {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>日志管理</Typography.Title>

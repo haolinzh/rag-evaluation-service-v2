@@ -126,7 +126,13 @@ export interface SystemConfig {
     forbiddenKeywords: string;
   };
   cache: { enabled: boolean; ttlSeconds: number };
-  judge: { enabled: boolean; model: string };
+  judge: { enabled: boolean; model: string; temperature: number };
+  generation: { temperature: number; topP: number; maxTokens: number };
+  vector: {
+    backend: 'pgvector' | 'elasticsearch';
+    pgvector: { indexType: 'ivfflat' | 'hnsw'; lists: number; probes: number; efSearch: number };
+    elasticsearch: { numCandidates: number };
+  };
   modelOptions: ModelOption[];
   embeddingDimension: number;
   apiKeyMasked?: string | null;
