@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Button, Typography, Space, Card, Checkbox, Switch, Progress, Table, Tabs, Tag, Alert, Spin, Empty, Select, Segmented,
+  Button, Typography, Space, Card, Checkbox, Switch, Progress, Table, Tabs, Tag, Alert, Spin, Empty, Select, Segmented, Tooltip,
 } from 'antd';
-import { ArrowLeftOutlined, ExperimentOutlined, ThunderboltOutlined, StopOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ExperimentOutlined, ThunderboltOutlined, StopOutlined, InfoCircleOutlined, OrderedListOutlined } from '@ant-design/icons';
 import { runEvaluation, fetchEvaluationQuestions, fetchEvaluationHistory, fetchEvaluationRun, fetchConfig, fetchEvaluationStatus, cancelEvaluation } from '../api';
-import type { EvaluationEvent, EvaluationSummary, EvaluationQuestionResult, EvaluationRunMeta } from '../types';
+import type { EvaluationEvent, EvaluationSummary, EvaluationQuestionResult, EvaluationRunMeta, EvaluationQuestion } from '../types';
+import QuestionManagement from './QuestionManagement';
 
 interface Props {
   onBack: () => void;
@@ -15,6 +16,13 @@ const MODE_OPTIONS = [
   { label: 'hybrid（关键词+向量 RRF）', value: 'hybrid' },
   { label: 'hybrid-rerank（RRF+精排）', value: 'hybrid-rerank' },
 ];
+
+const TYPE_LABELS: Record<string, string> = {
+  factual: '事实型',
+  explanatory: '解释型',
+  comparison: '对比型',
+  safety_refusal: '拒答型',
+};
 
 type MetricKey = Exclude<keyof EvaluationSummary, 'mode'>;
 
@@ -29,6 +37,28 @@ const METRICS: { key: MetricKey; label: string; digits: number }[] = [
   { key: 'p50LatencyMs', label: 'P50 Latency (ms)', digits: 1 },
   { key: 'p95LatencyMs', label: 'P95 Latency (ms)', digits: 1 },
 ];
+
+const METRIC_HINTS: Record<string, string> = {
+  'Faithfulness': '回答是否忠于检索到的上下文，有无编造/幻觉。规则评测用相似度近似，大模型评测直接判断。',
+  'Context Precision': '检索到的上下文是否相关、有用（RAGAS 式 AP，越靠前越相关）。',
+  'Answer Compliance': '回答是否符合格式规范：长度、引用标记、markdown 结构化、拒答处理。',
+  'Refusal Appropriateness': '是否在应拒答时拒答（如敏感话题）、不应拒答时正常回答。',
+  'Style Consistency': '回答风格是否稳定：长度适中、无 HTML/代码块污染。',
+  'Answer Relevancy': '回答是否切题、有无跑题（仅大模型评测提供）。',
+};
+
+const metricTitle = (label: string): React.ReactNode => {
+  const hint = METRIC_HINTS[label];
+  if (!hint) return label;
+  return (
+    <span>
+      {label}
+      <Tooltip title={hint}>
+        <InfoCircleOutlined style={{ marginLeft: 6, color: '#999' }} />
+      </Tooltip>
+    </span>
+  );
+};
 
 const fmt = (v: number | undefined | null, digits: number) =>
   typeof v === 'number' ? v.toFixed(digits) : '-';
@@ -48,7 +78,8 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
   const [judgeModel, setJudgeModel] = useState('qwen-turbo');
   const [judgeModelOptions, setJudgeModelOptions] = useState<{ label: string; value: string }[]>([]);
   const [running, setRunning] = useState(false);
-  const [questionCount, setQuestionCount] = useState<number | null>(null);
+  const [allQuestions, setAllQuestions] = useState<EvaluationQuestion[]>([]);
+  const [types, setTypes] = useState<string[]>([]);
   const [currentMode, setCurrentMode] = useState<string | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
   const [doneCount, setDoneCount] = useState(0);
@@ -62,12 +93,26 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [bgRunning, setBgRunning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [showQuestionManagement, setShowQuestionManagement] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const lastSeenRunId = useRef<number | null>(null);
 
   useEffect(() => {
-    fetchEvaluationQuestions().then((qs) => setQuestionCount(qs.length)).catch(() => {});
-  }, []);
+    if (showQuestionManagement) return;
+    fetchEvaluationQuestions().then((qs) => setAllQuestions(qs)).catch(() => {});
+  }, [showQuestionManagement]);
+
+  const typeOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    allQuestions.forEach((q) => {
+      counts.set(q.expectedType, (counts.get(q.expectedType) ?? 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([t, n]) => ({ label: `${TYPE_LABELS[t] ?? t}（${n} 题）`, value: t }));
+  }, [allQuestions]);
+
+  const selectedQuestionCount = types.length === 0
+    ? allQuestions.length
+    : allQuestions.filter((q) => types.includes(q.expectedType)).length;
 
   useEffect(() => {
     fetchEvaluationHistory().then((list) => {
@@ -228,7 +273,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      await runEvaluation(runModes, clearCache, { judgeEnabled, judgeModel }, handleEvent, controller.signal);
+      await runEvaluation(runModes, clearCache, { judgeEnabled, judgeModel }, types, handleEvent, controller.signal);
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
         setError(e?.message ?? '测评请求失败');
@@ -246,7 +291,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
   });
 
   const comparisonColumns = [
-    { title: '指标', dataIndex: 'label', key: 'label', width: 200 },
+    { title: '指标', dataIndex: 'label', key: 'label', width: 200, render: (v: string) => metricTitle(v) },
     ...summaries.map((s) => ({ title: s.mode, dataIndex: s.mode, key: s.mode })),
   ];
 
@@ -259,12 +304,12 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
       render: (v: boolean) => (v ? <Tag color="red">拒答</Tag> : <Tag color="green">回答</Tag>),
     },
     { title: '延迟(ms)', dataIndex: 'latencyMs', key: 'latencyMs', width: 90, render: (v: number) => fmt(v, 0) },
-    { title: 'Faithfulness', dataIndex: 'faithfulness', key: 'faithfulness', width: 110, render: (v: number) => fmt(v, 2) },
-    { title: 'Context Precision', dataIndex: 'contextPrecision', key: 'contextPrecision', width: 130, render: (v: number) => fmt(v, 2) },
-    { title: 'Answer Compliance', dataIndex: 'answerCompliance', key: 'answerCompliance', width: 130, render: (v: number) => fmt(v, 2) },
-    { title: 'Refusal Appropriateness', dataIndex: 'refusalAppropriate', key: 'refusalAppropriate', width: 150, render: (v: number) => fmt(v, 2) },
-    { title: 'Style Consistency', dataIndex: 'styleConsistent', key: 'styleConsistent', width: 120, render: (v: number) => fmt(v, 2) },
-    { title: 'Answer Relevancy', dataIndex: 'answerRelevancy', key: 'answerRelevancy', width: 130, render: (v: number | null | undefined) => fmt(v, 2) },
+    { title: metricTitle('Faithfulness'), dataIndex: 'faithfulness', key: 'faithfulness', width: 110, render: (v: number) => fmt(v, 2) },
+    { title: metricTitle('Context Precision'), dataIndex: 'contextPrecision', key: 'contextPrecision', width: 130, render: (v: number) => fmt(v, 2) },
+    { title: metricTitle('Answer Compliance'), dataIndex: 'answerCompliance', key: 'answerCompliance', width: 130, render: (v: number) => fmt(v, 2) },
+    { title: metricTitle('Refusal Appropriateness'), dataIndex: 'refusalAppropriate', key: 'refusalAppropriate', width: 150, render: (v: number) => fmt(v, 2) },
+    { title: metricTitle('Style Consistency'), dataIndex: 'styleConsistent', key: 'styleConsistent', width: 120, render: (v: number) => fmt(v, 2) },
+    { title: metricTitle('Answer Relevancy'), dataIndex: 'answerRelevancy', key: 'answerRelevancy', width: 130, render: (v: number | null | undefined) => fmt(v, 2) },
   ];
 
   const expandedRowRender = (r: EvaluationQuestionResult) => (
@@ -300,14 +345,23 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
 
   const orderedModes = summaries.map((s) => s.mode).filter((m) => resultsByMode[m]);
 
+  if (showQuestionManagement) {
+    return <QuestionManagement onBack={() => setShowQuestionManagement(false)} />;
+  }
+
   return (
-    <div style={{ height: '100vh', overflowY: 'auto', padding: 24 }}>
+    <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
       <Space style={{ marginBottom: 16 }} align="center" wrap>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0 }}>
           <ExperimentOutlined /> 一键测评
         </Typography.Title>
-        {questionCount != null && <Tag>测试集 {questionCount} 题</Tag>}
+        <Button icon={<OrderedListOutlined />} onClick={() => setShowQuestionManagement(true)}>
+          管理测试集
+        </Button>
+        {allQuestions.length > 0 && (
+          <Tag>{types.length === 0 ? `测试集 ${allQuestions.length} 题` : `已选 ${selectedQuestionCount}/${allQuestions.length} 题`}</Tag>
+        )}
         {history.length > 0 && (
           <Select
             style={{ minWidth: 320 }}
@@ -329,6 +383,20 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
             value={modes}
             onChange={(vals) => setModes(vals as string[])}
             disabled={running}
+          />
+        </Space>
+        <Space wrap size="middle" style={{ marginTop: 12 }}>
+          <span>题型范围：</span>
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="不选 = 全部题型"
+            style={{ minWidth: 320 }}
+            value={types}
+            onChange={setTypes}
+            options={typeOptions}
+            disabled={running}
+            maxTagCount="responsive"
           />
         </Space>
         <Space wrap size="middle" style={{ marginTop: 12 }}>
@@ -433,7 +501,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
                   pagination={false}
                   size="small"
                   rowKey="questionId"
-                  scroll={{ x: 'max-content' }}
+                  scroll={{ x: 'max-content', y: 480 }}
                   expandable={{ expandedRowRender, rowExpandable: () => true }}
                 />
               ),

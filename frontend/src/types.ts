@@ -138,6 +138,14 @@ export interface EvaluationQuestion {
   language: string;
   expectedType: string;
   difficulty: string;
+  createdAt?: string | null;
+}
+
+export interface EvaluationQuestionInput {
+  question: string;
+  language: string;
+  expectedType: string;
+  difficulty: string;
 }
 
 export interface EvaluationQuestionResult {

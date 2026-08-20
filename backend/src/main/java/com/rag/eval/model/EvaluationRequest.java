@@ -12,4 +12,5 @@ public class EvaluationRequest {
     private boolean clearCache = true;
     private Boolean judgeEnabled;
     private String judgeModel;
+    private List<String> types;
 }

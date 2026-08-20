@@ -6,8 +6,6 @@ import com.rag.eval.model.*;
 import com.rag.eval.repository.EvaluationRunRepo;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -17,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 @Service
 public class EvaluationService {
@@ -33,6 +32,7 @@ public class EvaluationService {
     private final CorpusService corpusService;
     private final EvaluationRunRepo runRepo;
     private final ConfigService configService;
+    private final EvaluationQuestionService questionService;
     private final ObjectMapper objectMapper;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
@@ -44,6 +44,7 @@ public class EvaluationService {
                              CorpusService corpusService,
                              EvaluationRunRepo runRepo,
                              ConfigService configService,
+                             EvaluationQuestionService questionService,
                              ObjectMapper objectMapper) {
         this.chatService = chatService;
         this.dashScope = dashScope;
@@ -52,18 +53,24 @@ public class EvaluationService {
         this.corpusService = corpusService;
         this.runRepo = runRepo;
         this.configService = configService;
+        this.questionService = questionService;
         this.objectMapper = objectMapper;
     }
 
     public List<EvaluationQuestion> loadQuestions() {
-        try (InputStream in = getClass().getClassLoader().getResourceAsStream("evaluation-questions.json")) {
-            if (in == null) {
-                throw new IllegalStateException("evaluation-questions.json not found on classpath");
-            }
-            return objectMapper.readValue(in, new TypeReference<List<EvaluationQuestion>>() {});
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load evaluation questions", e);
-        }
+        return questionService.list();
+    }
+
+    private List<EvaluationQuestion> filterQuestions(List<EvaluationQuestion> all, List<String> types) {
+        if (types == null || types.isEmpty()) return all;
+        Set<String> wanted = types.stream()
+            .map(String::trim)
+            .filter(t -> !t.isEmpty())
+            .collect(Collectors.toSet());
+        if (wanted.isEmpty()) return all;
+        return all.stream()
+            .filter(q -> q.getExpectedType() != null && wanted.contains(q.getExpectedType()))
+            .toList();
     }
 
     public boolean isRunning() {
@@ -75,14 +82,14 @@ public class EvaluationService {
     }
 
     public void runEvaluation(List<String> modes, boolean clearCache, JudgeConfig judgeConfig,
-                              Consumer<Map<String, Object>> onEvent) {
+                              List<String> types, Consumer<Map<String, Object>> onEvent) {
         if (!running.compareAndSet(false, true)) {
             emit(onEvent, Map.of("type", "error", "message", "已有测评正在进行中，请稍候"));
             return;
         }
         cancelRequested.set(false);
         try {
-            doRunEvaluation(modes, clearCache, judgeConfig, onEvent);
+            doRunEvaluation(modes, clearCache, judgeConfig, types, onEvent);
         } finally {
             running.set(false);
             cancelRequested.set(false);
@@ -90,7 +97,7 @@ public class EvaluationService {
     }
 
     private void doRunEvaluation(List<String> modes, boolean clearCache, JudgeConfig judgeConfig,
-                                 Consumer<Map<String, Object>> onEvent) {
+                                 List<String> types, Consumer<Map<String, Object>> onEvent) {
         corpusService.ensureIngested(onEvent);
 
         List<String> effectiveModes = (modes == null || modes.isEmpty())
@@ -103,7 +110,7 @@ public class EvaluationService {
 
         JudgeConfig judge = resolveJudge(judgeConfig);
 
-        List<EvaluationQuestion> questions = loadQuestions();
+        List<EvaluationQuestion> questions = filterQuestions(loadQuestions(), types);
         Embedder embedder = new Embedder();
 
         Map<String, List<EvaluationQuestionResult>> allResults = new LinkedHashMap<>();

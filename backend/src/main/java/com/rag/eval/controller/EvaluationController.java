@@ -6,8 +6,10 @@ import com.rag.eval.model.EvaluationReport;
 import com.rag.eval.model.EvaluationRequest;
 import com.rag.eval.model.EvaluationRunMeta;
 import com.rag.eval.model.JudgeConfig;
+import com.rag.eval.service.EvaluationQuestionService;
 import com.rag.eval.service.EvaluationService;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -21,17 +23,49 @@ import java.util.concurrent.Executors;
 public class EvaluationController {
 
     private final EvaluationService evaluationService;
+    private final EvaluationQuestionService questionService;
     private final ObjectMapper objectMapper;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
-    public EvaluationController(EvaluationService evaluationService, ObjectMapper objectMapper) {
+    public EvaluationController(EvaluationService evaluationService,
+                                EvaluationQuestionService questionService,
+                                ObjectMapper objectMapper) {
         this.evaluationService = evaluationService;
+        this.questionService = questionService;
         this.objectMapper = objectMapper;
     }
 
     @GetMapping("/questions")
     public List<EvaluationQuestion> questions() {
-        return evaluationService.loadQuestions();
+        return questionService.list();
+    }
+
+    @PostMapping("/questions")
+    public ResponseEntity<?> createQuestion(@RequestBody EvaluationQuestion question) {
+        try {
+            return ResponseEntity.ok(questionService.create(question));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/questions/{id}")
+    public ResponseEntity<?> updateQuestion(@PathVariable String id, @RequestBody EvaluationQuestion question) {
+        try {
+            return ResponseEntity.ok(questionService.update(id, question));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/questions/{id}")
+    public ResponseEntity<?> deleteQuestion(@PathVariable String id) {
+        try {
+            questionService.delete(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     @GetMapping("/history")
@@ -60,11 +94,12 @@ public class EvaluationController {
         SseEmitter emitter = new SseEmitter(0L);
         List<String> modes = request == null ? null : request.getModes();
         boolean clearCache = request == null || request.isClearCache();
+        List<String> types = request == null ? null : request.getTypes();
         JudgeConfig judge = request == null ? new JudgeConfig(null, null)
             : new JudgeConfig(request.getJudgeEnabled(), request.getJudgeModel());
         executor.execute(() -> {
             try {
-                evaluationService.runEvaluation(modes, clearCache, judge, event -> send(emitter, event));
+                evaluationService.runEvaluation(modes, clearCache, judge, types, event -> send(emitter, event));
             } finally {
                 emitter.complete();
             }

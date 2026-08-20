@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationEvent, EvaluationReport, EvaluationRunMeta } from './types';
+import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta } from './types';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -162,6 +162,20 @@ export async function fetchEvaluationQuestions(): Promise<EvaluationQuestion[]> 
   return data;
 }
 
+export async function createEvaluationQuestion(input: EvaluationQuestionInput): Promise<EvaluationQuestion> {
+  const { data } = await api.post('/evaluation/questions', input);
+  return data;
+}
+
+export async function updateEvaluationQuestion(id: string, input: EvaluationQuestionInput): Promise<EvaluationQuestion> {
+  const { data } = await api.put(`/evaluation/questions/${id}`, input);
+  return data;
+}
+
+export async function deleteEvaluationQuestion(id: string): Promise<void> {
+  await api.delete(`/evaluation/questions/${id}`);
+}
+
 export async function fetchEvaluationHistory(): Promise<EvaluationRunMeta[]> {
   const { data } = await api.get('/evaluation/history');
   return data;
@@ -185,13 +199,14 @@ export async function runEvaluation(
   modes: string[],
   clearCache: boolean,
   judge: { judgeEnabled: boolean; judgeModel: string },
+  types: string[],
   onEvent: (evt: EvaluationEvent) => void,
   signal?: AbortSignal
 ): Promise<void> {
   const resp = await fetch('/api/evaluation/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ modes, clearCache, judgeEnabled: judge.judgeEnabled, judgeModel: judge.judgeModel }),
+    body: JSON.stringify({ modes, clearCache, judgeEnabled: judge.judgeEnabled, judgeModel: judge.judgeModel, types }),
     signal,
   });
 
