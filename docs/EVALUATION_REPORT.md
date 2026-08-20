@@ -1,6 +1,6 @@
 # 评测报告
 
-> 实测日期：2026-08-17　·　测试集：`evaluation-questions.json`（22 题，中 18 / 英 4）　·　驱动：前端「测评」页 / `POST /api/evaluation/run`（指标算法已迁移至后端 `EvaluationService`）
+> 实测日期：2026-08-17　·　测试集：`evaluation_question` 表（首启从 `evaluation-questions.json` 灌入，22 题，中 18 / 英 4）　·　驱动：前端「测评」页 / `POST /api/evaluation/run`（指标算法已迁移至后端 `EvaluationService`）
 > 模型：`qwen-turbo` + `text-embedding-v3`（hybrid-rerank 另用 `qwen3-rerank`）
 
 ---
@@ -104,5 +104,5 @@
 本报告实测数据由前端「测评」页 / `POST /api/evaluation/run` 产生，指标算法内置于后端 `EvaluationService`。
 
 - **一键评测**：前端点击「测评」→ 勾选模式 → 开始，SSE 实时进度。
-- **语料自动入库**：测评前自动检查 8 份语料，缺失的从 `test-docs/` 自动解析/分块/向量化并写入 ES + pgvector。
+- **语料自动入库**：测评前自动检查 8 份语料，缺失的从 `test-docs/` 自动解析/分块/向量化并双写 ES（含 dense_vector）+ pgvector。
 - **结果持久化**：每次报告存入 PostgreSQL `evaluation_run` 表，测评页顶部下拉可回看任意历史测评，刷新/重进页面结果不丢失。

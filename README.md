@@ -50,7 +50,7 @@
 
 ![系统配置页](docs/screenshot-config.jpg)
 
-**系统配置**：检索参数、对话/向量/精排模型、安全阈值与语义缓存的运行时热更新，持久化到数据库，无需重启。
+**系统配置**：检索参数、对话/向量/精排模型、向量后端（pgvector / Elasticsearch）、安全阈值与语义缓存的运行时热更新，持久化到数据库，无需重启。
 
 ---
 
@@ -59,7 +59,7 @@
 | 能力 | 说明 |
 |---|---|
 | **多轮对话** | 基于 PostgreSQL 持久化会话历史，最近 N 轮上下文注入 |
-| **混合检索** | ES 关键词 + pgvector 语义，`CompletableFuture` 并行召回，RRF 融合 |
+| **混合检索** | ES 关键词 + 向量语义（pgvector / ES dense_vector 可切换），`CompletableFuture` 并行召回，RRF 融合 |
 | **检索模式可切换** | `vector` / `hybrid` / `hybrid-rerank` 三种模式，前端或请求参数动态切换，用于评测对比 |
 | **安全拒答** | 提示注入防御 → 关键词黑名单 → 相似度阈值 → 越界检测，四级闸门 |
 | **PII 脱敏** | 星号中段掩码：身份证 `110101********1234`、手机号 `138****5678`、邮箱 `t***@example.com`（按序，避免手机号误匹配身份证号） |
@@ -68,10 +68,12 @@
 | **流式输出** | 思考过程与回答通过 SSE（`/api/chat/stream`）逐 token 流式返回，无需等待完整生成 |
 | **请求日志** | 以请求为 entry 持久化：请求 ID、时间、问题、session、模型、模式、命中文档、响应时间、LLM 调用次数、token、脱敏数等 |
 | **运维指标** | 每请求采集 p50/p95 延迟、token 用量、缓存命中率、拒答率、答案合规率、脱敏次数 |
-| **一键评测** | 前端「测评」页一键跑 22 道中英测试题，对比 hybrid / vector / hybrid-rerank 三模式，SSE 实时进度 + 5 项质量指标对比 |
+| **一键评测** | 前端「测评」页一键跑测试题，对比 hybrid / vector / hybrid-rerank 三模式，SSE 实时进度 + 5 项质量指标对比；支持后台运行、按题型筛选 |
 | **评测结果持久化** | 每次评测报告持久化到 PostgreSQL（`evaluation_run` 表），进入测评页可回看任意历史测评 |
-| **语料自动入库** | 测评开始前自动检查 8 份 case study 语料，缺失的自动解析/分块/向量化并写入 ES + pgvector，无需手动上传 |
-| **运行时配置** | 检索参数、模型选择、安全阈值、语义缓存可通过「系统配置」页热更新，持久化到 `system_config` 表，无需重启 |
+| **语料自动入库** | 测评开始前自动检查 8 份 case study 语料，缺失的自动解析/分块/向量化并双写 ES（含 dense_vector）+ pgvector，无需手动上传 |
+| **向量库可切换** | 语义检索后端支持 pgvector / Elasticsearch dense_vector 运行时切换，入库双写两库、切换即时生效无需重新入库；索引类型/lists 等建索引参数改动后一键重建 |
+| **测试集管理** | 测试题存入 PostgreSQL（`evaluation_question` 表），支持增删改查、按题型/难度/语言标注，评测可按题型子集运行 |
+| **运行时配置** | 检索参数、模型选择、生成参数、向量后端、安全阈值、语义缓存可通过「系统配置」页热更新，持久化到 `system_config` 表，无需重启 |
 
 ---
 
@@ -148,13 +150,13 @@ docker-compose ps
 
 1. 按「快速开始」启动服务。
 2. 浏览器打开 `http://localhost:3000`，点击右上角「测评」进入测评页。
-3. 勾选要对比的检索模式，选择打分方式（大模型评测 / 规则评测）与评测模型，点击「开始测评」。
+3. 勾选要对比的检索模式，选择打分方式（大模型评测 / 规则评测）与评测模型，可选按题型筛选（不选 = 全部），点击「开始测评」。
 
-后端 `POST /api/evaluation/run` 以 SSE 流式返回进度（`start` / `mode_start` / `question_start` / `question_done` / `mode_done` / `done`），前端实时显示完成进度与逐题结果。**测评开始前会自动检查 8 份语料，缺失的先行入库**（`ingest_*` 事件），无需手动上传。
+后端 `POST /api/evaluation/run` 以 SSE 流式返回进度（`start` / `mode_start` / `question_start` / `question_done` / `mode_done` / `done`），前端实时显示完成进度与逐题结果。**测评开始前会自动检查 8 份语料，缺失的先行入库**（`ingest_*` 事件），无需手动上传。**评测可在后台运行**：中途离开测评页，回来通过状态轮询自动加载结果；点击「放弃测评」可取消当前运行（`POST /api/evaluation/cancel`），并立即开始下一次。
 
 #### 二、测试集
 
-22 道中英双语题（`evaluation-questions.json`），全部对齐到**实际已入库的 8 份语料**，避免「语料无此话题」导致的空召回：
+测试集（默认 22 道中英双语题）已由静态 JSON 迁移为**数据库存储**（`evaluation_question` 表，首启从 `evaluation-questions.json` 幂等灌入），全部对齐到**实际已入库的 8 份语料**，避免「语料无此话题」导致的空召回：
 
 | 类型 | 数量 | 说明 |
 |---|---|---|
@@ -162,6 +164,8 @@ docker-compose ps
 | `explanatory`（解释型） | 8 | 生成质量 |
 | `comparison`（对比型） | 2 | 多源上下文综合 |
 | `safety_refusal`（拒答型） | 2 | 拒答行为（银行卡/炸弹） |
+
+每题另携带 `language`（中文/英文）与 `difficulty`（基础/进阶）字段，可在「测评」页按题型子集运行（见下方「测试集管理」）。
 
 #### 三、怎么打分
 
@@ -196,6 +200,15 @@ docker-compose ps
 
 实测三模式对比数据见 [docs/EVALUATION_REPORT.md](docs/EVALUATION_REPORT.md)。
 
+#### 五、测试集管理
+
+测试集已入库存储（`evaluation_question` 表），首次启动从 `evaluation-questions.json` 幂等灌入。前端「测评」页右上「管理测试集」进入管理页，支持：
+
+- **增删改查**：新增/编辑题目（题型、难度、语言、题目内容）、删除题目（历史报告不受影响）。
+- **按题型筛选运行**：测评页「题型范围」多选框按 `expected_type` 选取子集（不选 = 全部），只跑所选题型。
+
+接口：`GET/POST /api/evaluation/questions`、`PUT/DELETE /api/evaluation/questions/{id}`。
+
 ### 2. 运维指标报告
 
 后端采集每请求指标，通过 CSV 接口导出：
@@ -219,7 +232,7 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
 
 ### 4. 配置说明
 
-检索参数、模型选择、安全阈值、语义缓存开关均支持在运行时通过前端「系统配置」页（`GET/PUT /api/config`）热更新，持久化到 `system_config` 表，无需重启。以下基础设施连接与 API Key 通过环境变量覆盖（见 `application.yml`）：
+检索参数、模型选择、生成参数、向量后端、安全阈值、语义缓存开关均支持在运行时通过前端「系统配置」页（`GET/PUT /api/config`）热更新，持久化到 `system_config` 表，无需重启。以下基础设施连接与 API Key 通过环境变量覆盖（见 `application.yml`）：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
@@ -227,6 +240,19 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
 | `DB_HOST` / `DB_USER` / `DB_PASSWORD` | `localhost` / `rag` / `rag123` | PostgreSQL 连接 |
 | `ES_HOST` / `ES_PORT` | `localhost` / `9200` | Elasticsearch 连接 |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 连接 |
+
+**向量后端（可切换）**：语义检索后端由 `vector.backend` 决定（`pgvector` / `elasticsearch`），入库时 embedding **双写** pgvector 与 Elasticsearch dense_vector，切换后端**即时生效、无需重新入库**。各后端参数：
+
+| 配置键 | 默认 | 说明 |
+|---|---|---|
+| `vector.backend` | `pgvector` | 实际用于语义检索的后端 |
+| `vector.pgvector.index-type` | `ivfflat` | `ivfflat` / `hnsw`（改后需重建） |
+| `vector.pgvector.lists` | `100` | IVFFlat 列表数（改后需重建） |
+| `vector.pgvector.probes` | `1` | 查询探测数（即时生效） |
+| `vector.pgvector.ef-search` | `40` | HNSW 查询 ef（即时生效） |
+| `vector.elasticsearch.num-candidates` | `100` | ES kNN 候选数（即时生效） |
+
+「索引类型 / lists」等建索引参数改动后需点击「系统配置」页的「重建向量索引」（`POST /api/config/rebuild-vector-index`）重新入库；`probes` / `ef-search` / `num-candidates` 等查询参数即时生效。首次以 Elasticsearch 作为向量后端时，系统会在入库时自动创建带 `dense_vector` 映射的索引（旧存量索引需重建一次）。
 
 **API Key 初始化优先级**（`dashscope.api-key`）：`system_config` 表（UI 配置） > 环境变量 `DASHSCOPE_API_KEY` > 无。可通过 `PUT /api/config/apikey` 写入（`{"apiKey":"sk-..."}`）或传空值清除（回退环境变量）；`GET /api/config` 仅返回脱敏尾号 `apiKeyMasked`，不回显完整 Key，避免泄露。
 
@@ -240,8 +266,8 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
 |---|---|
 | 后端框架 | Spring Boot 3.4.1 (Java 17) |
 | 大模型 | 阿里云百炼 DashScope：`qwen-turbo` (对话) + `text-embedding-v3` (向量) + `qwen3-rerank` (精排)；对话可切换 `qwen-plus` / `qwen-max` / `deepseek-r1` 等模型 |
-| 关键词检索 | Elasticsearch 8.13.4 |
-| 向量数据库 | PostgreSQL 16 + pgvector (cosine `<=>` 操作符) |
+| 关键词检索 | Elasticsearch 8.13.4（BM25 `match`） |
+| 向量数据库 | PostgreSQL 16 + pgvector（cosine `<=>` 操作符）与 Elasticsearch dense_vector（kNN），**运行时可切换** |
 | 缓存 | Redis 7 |
 | 文档解析 | Apache Tika 3.1.0 (PDF/DOCX/TXT，含 OCR 扫描件) |
 | 前端 | React 18 + TypeScript + Vite + Ant Design 5 + react-resizable-panels（可拖动分栏） |
@@ -265,8 +291,9 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
                          │                                         │
                          │  1. 加载历史 (PostgreSQL, 最近 N 轮)     │
                          │  2. RetrievalService.retrieve(query)     │
-                         │       ├─ vector:        VectorSearch     │
-                         │       ├─ hybrid:        ES+Vector ──▶ RRF│
+                         │       ├─ vector:        VectorStore      │
+                         │       │   (pgvector / ES dense_vector)   │
+                         │       ├─ hybrid:        ES+向量 ──▶ RRF  │
                          │       └─ hybrid-rerank: RRF ──▶ Rerank   │
                          │  3. SafetyService.evaluate()  允许/拒答  │
                          │  4. SemanticCacheService.lookup()        │
@@ -277,11 +304,12 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
                                  │          │          │
                         ┌────────▼───┐ ┌────▼─────┐ ┌──▼────────┐
                         │ PostgreSQL │ │Elasticse.│ │   Redis   │
-                        │  pgvector  │ │  keyword │ │sem. cache │
+                        │  pgvector  │ │keyword + │ │sem. cache │
+                        │            │ │dense_vect│ │           │
                         └────────────┘ └──────────┘ └───────────┘
 
          入库流程: 前端「文档上传」→ Tika 解析 → 分块 → DashScope embedding
-                     → ES 索引 + pgvector 向量插入
+                     → 双写 ES（含 dense_vector）+ pgvector 向量插入
 
          评测流程: 前端「测评」→ POST /api/evaluation/run (SSE)
                      → 语料自动入库检查 → 逐题调用 ChatService → 指标打分
@@ -312,7 +340,7 @@ rag-evaluation-service/
 │       │   ├── controller/         # Chat / Document / Report / Log / Cache / Config / Evaluation
 │       │   ├── model/              # DTO + JPA 实体（含 RequestLog）
 │       │   ├── repository/         # JPA + JDBC(pgvector 原生 SQL)
-│       │   ├── service/            # 检索/重排/安全/脱敏/缓存/指标/报告/评测/语料
+│       │   ├── service/            # 检索(VectorStore 策略)/重排/安全/脱敏/缓存/指标/报告/评测/重建/语料
 │       │   └── pipeline/           # 入库管道（解析/分块/索引）
 │       ├── main/resources/
 │       │   ├── application.yml
@@ -327,11 +355,12 @@ rag-evaluation-service/
 │           ├── DocumentPanel.tsx    # 上传（chunk 配置）+ 检索模式切换
 │           ├── DocumentManagement.tsx # 文档管理页（chunk 预览）
 │           ├── ChatPanel.tsx        # 多轮对话 + 来源展示
-│           ├── ConfigPage.tsx       # 系统配置页（检索/模型/安全/缓存热更新）
+│           ├── ConfigPage.tsx       # 系统配置页（检索/模型/生成/向量/安全/缓存热更新）
 │           ├── MetricsPanel.tsx     # 指标面板 + CSV 下载 + 清缓存
 │           ├── LogPanel.tsx         # 主页日志（自动刷新）
 │           ├── LogManagement.tsx    # 日志管理页（全量明细）
-│           └── EvaluationPage.tsx   # 一键测评页（三模式对比 + 历史回看）
+│           ├── EvaluationPage.tsx   # 一键测评页（三模式对比 + 历史回看 + 题型筛选）
+│           └── QuestionManagement.tsx # 测试集管理页（增删改查）
 ├── test-docs/                      # 8 份 case study 语料（测评前自动入库的源目录）
 └── evaluation/                     # 历史离线评测脚本（已被内置 UI 评测取代）
     ├── questions.json              # 22 道中英测试题
@@ -356,14 +385,20 @@ rag-evaluation-service/
 | `POST` | `/api/cache/clear` | 清空语义缓存 |
 | `GET` | `/api/report/csv` | 下载运维指标 CSV |
 | `GET` | `/api/report/summary` | 运维指标汇总（JSON，主页指标面板轮询） |
-| `GET` | `/api/config` | 读取运行时配置（检索/模型/安全/缓存） |
+| `GET` | `/api/config` | 读取运行时配置（检索/模型/生成/向量/安全/缓存） |
 | `PUT` | `/api/config` | 更新运行时配置，热更新无需重启 |
 | `PUT` | `/api/config/mode` | 快速切换检索模式 |
 | `PUT` | `/api/config/apikey` | 设置/清除 API Key（`{"apiKey":"sk-..."}`，空值清除并回退环境变量） |
-| `GET` | `/api/evaluation/questions` | 读取评测测试集（22 题） |
+| `POST` | `/api/config/rebuild-vector-index` | 重建向量索引（按当前配置重新入库 pgvector + ES） |
+| `GET` | `/api/evaluation/questions` | 读取评测测试集（`evaluation_question` 表） |
+| `POST` | `/api/evaluation/questions` | 新增测试题 |
+| `PUT` | `/api/evaluation/questions/{id}` | 更新测试题 |
+| `DELETE` | `/api/evaluation/questions/{id}` | 删除测试题 |
 | `POST` | `/api/evaluation/run` | 一键评测（SSE，实时进度 + 逐题结果 + 指标汇总） |
 | `GET` | `/api/evaluation/history` | 历史测评列表（按时间倒序） |
 | `GET` | `/api/evaluation/history/{id}` | 某次测评的完整报告 |
+| `GET` | `/api/evaluation/status` | 查询是否正在评测（`{"running": true/false}`） |
+| `POST` | `/api/evaluation/cancel` | 取消当前后台评测 |
 
 **问答示例：**
 
@@ -393,8 +428,8 @@ curl -X POST localhost:8080/api/chat \
 
 | 模式 | 行为 |
 |---|---|
-| `vector` | 仅 pgvector 向量语义检索 |
-| `hybrid` | ES 关键词 + pgvector 向量并行召回 → RRF 融合（无重排） |
+| `vector` | 仅向量语义检索（后端可切换 pgvector / ES dense_vector） |
+| `hybrid` | ES 关键词 + 向量（pgvector / ES）并行召回 → RRF 融合（无重排） |
 | `hybrid-rerank` | ES + 向量 → RRF 融合出候选集 → DashScope `qwen3-rerank` 精排取 topK |
 
 关键参数（可在前端「系统配置」页热更新）：
@@ -408,6 +443,8 @@ retrieval:
   rerank-candidates: 20          # hybrid-rerank 时 RRF 先保留的候选数
   similarity-threshold: 0.4
 ```
+
+「向量语义检索」这一路的具体后端由 `vector.backend`（`pgvector` / `elasticsearch`）决定，与检索模式正交——三种模式下的「向量」都会路由到所选后端。入库时 embedding 双写两库，切换后端即时生效；索引类型 / lists 等建索引参数改动后需点「重建向量索引」。
 
 ### 6. PDF Chunk 策略
 
