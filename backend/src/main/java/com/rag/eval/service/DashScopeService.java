@@ -42,10 +42,23 @@ public class DashScopeService {
     }
 
     public ChatResult chat(String systemPrompt, String userMessage) {
-        return chatWithModel(getChatModel(), 0.3, systemPrompt, userMessage);
+        return generate(getChatModel(),
+            config.getDouble("generation.temperature", 0.3),
+            config.getDouble("generation.top-p", 1.0),
+            config.getInt("generation.max-tokens", 0),
+            systemPrompt, userMessage);
     }
 
     public ChatResult chatWithModel(String model, double temperature, String systemPrompt, String userMessage) {
+        return generate(model, temperature, 1.0, 0, systemPrompt, userMessage);
+    }
+
+    public ChatResult chatForJudge(String model, String systemPrompt, String userMessage) {
+        return chatWithModel(model, config.getDouble("evaluation.judge-temperature", 0.0), systemPrompt, userMessage);
+    }
+
+    private ChatResult generate(String model, double temperature, double topP, int maxTokens,
+                                String systemPrompt, String userMessage) {
         try {
             String apiKey = resolveApiKey();
 
@@ -55,7 +68,14 @@ public class DashScopeService {
             );
             Map<String, Object> parameters = new LinkedHashMap<>();
             parameters.put("result_format", "message");
-            parameters.put("temperature", temperature);
+            if (topP < 1.0) {
+                parameters.put("top_p", topP);
+            } else {
+                parameters.put("temperature", temperature);
+            }
+            if (maxTokens > 0) {
+                parameters.put("max_tokens", maxTokens);
+            }
 
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", model);
@@ -118,6 +138,16 @@ public class DashScopeService {
             Map<String, Object> parameters = new LinkedHashMap<>();
             parameters.put("result_format", "message");
             parameters.put("incremental_output", true);
+            double topP = config.getDouble("generation.top-p", 1.0);
+            if (topP < 1.0) {
+                parameters.put("top_p", topP);
+            } else {
+                parameters.put("temperature", config.getDouble("generation.temperature", 0.3));
+            }
+            int maxTokens = config.getInt("generation.max-tokens", 0);
+            if (maxTokens > 0) {
+                parameters.put("max_tokens", maxTokens);
+            }
 
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", getChatModel());

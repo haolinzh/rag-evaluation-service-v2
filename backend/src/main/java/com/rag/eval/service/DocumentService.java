@@ -66,6 +66,10 @@ public class DocumentService {
         // Persist the original file before indexing.
         String storedFileName = fileStorage.store(fileName, bytes);
 
+        // Ensure ES index has a dense_vector mapping before dual-writing embeddings,
+        // so a fresh deployment gets kNN capability from the first upload.
+        esService.ensureVectorIndex();
+
         indexBuilder.buildIndex(chunks);
 
         meta.setFileName(fileName);

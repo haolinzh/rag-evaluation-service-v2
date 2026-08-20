@@ -2,6 +2,7 @@ package com.rag.eval.controller;
 
 import com.rag.eval.model.SystemConfigDto;
 import com.rag.eval.service.ConfigService;
+import com.rag.eval.service.RebuildService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +33,16 @@ public class ConfigController {
     private static final String K_API_KEY = "dashscope.api-key";
     private static final String K_JUDGE_ENABLED = "evaluation.judge-enabled";
     private static final String K_JUDGE_MODEL = "dashscope.judge-model";
+    private static final String K_JUDGE_TEMPERATURE = "evaluation.judge-temperature";
+    private static final String K_GEN_TEMPERATURE = "generation.temperature";
+    private static final String K_GEN_TOP_P = "generation.top-p";
+    private static final String K_GEN_MAX_TOKENS = "generation.max-tokens";
+    private static final String K_VECTOR_BACKEND = "vector.backend";
+    private static final String K_PG_INDEX_TYPE = "vector.pgvector.index-type";
+    private static final String K_PG_LISTS = "vector.pgvector.lists";
+    private static final String K_PG_PROBES = "vector.pgvector.probes";
+    private static final String K_PG_EF_SEARCH = "vector.pgvector.ef-search";
+    private static final String K_ES_NUM_CANDIDATES = "vector.elasticsearch.num-candidates";
 
     private static final int EMBEDDING_DIMENSION = 1024;
 
@@ -52,11 +63,15 @@ public class ConfigController {
     );
 
     private static final Set<String> MODES = Set.of("vector", "hybrid", "hybrid-rerank");
+    private static final Set<String> VECTOR_BACKENDS = Set.of("pgvector", "elasticsearch");
+    private static final Set<String> PG_INDEX_TYPES = Set.of("ivfflat", "hnsw");
 
     private final ConfigService config;
+    private final RebuildService rebuildService;
 
-    public ConfigController(ConfigService config) {
+    public ConfigController(ConfigService config, RebuildService rebuildService) {
         this.config = config;
+        this.rebuildService = rebuildService;
     }
 
     @GetMapping
@@ -75,6 +90,8 @@ public class ConfigController {
         SystemConfigDto.Models m = dto.models();
         SystemConfigDto.Safety s = dto.safety();
         SystemConfigDto.Cache c = dto.cache();
+        SystemConfigDto.Generation g = dto.generation();
+        SystemConfigDto.Vector v = dto.vector();
 
         Map<String, String> changes = new LinkedHashMap<>();
         changes.put(K_MODE, r.mode());
@@ -92,9 +109,21 @@ public class ConfigController {
         changes.put(K_FORBIDDEN, s.forbiddenKeywords());
         changes.put(K_CACHE_ENABLED, String.valueOf(c.enabled()));
         changes.put(K_CACHE_TTL, String.valueOf(c.ttlSeconds()));
+        changes.put(K_GEN_TEMPERATURE, String.valueOf(g.temperature()));
+        changes.put(K_GEN_TOP_P, String.valueOf(g.topP()));
+        changes.put(K_GEN_MAX_TOKENS, String.valueOf(g.maxTokens()));
+        if (v != null) {
+            changes.put(K_VECTOR_BACKEND, v.backend());
+            changes.put(K_PG_INDEX_TYPE, v.pgvector().indexType());
+            changes.put(K_PG_LISTS, String.valueOf(v.pgvector().lists()));
+            changes.put(K_PG_PROBES, String.valueOf(v.pgvector().probes()));
+            changes.put(K_PG_EF_SEARCH, String.valueOf(v.pgvector().efSearch()));
+            changes.put(K_ES_NUM_CANDIDATES, String.valueOf(v.elasticsearch().numCandidates()));
+        }
         if (dto.judge() != null) {
             changes.put(K_JUDGE_ENABLED, String.valueOf(dto.judge().enabled()));
             changes.put(K_JUDGE_MODEL, dto.judge().model());
+            changes.put(K_JUDGE_TEMPERATURE, String.valueOf(dto.judge().temperature()));
         }
 
         config.putAll(changes);
@@ -122,6 +151,19 @@ public class ConfigController {
         return ResponseEntity.ok(buildDto());
     }
 
+    @PostMapping("/rebuild-vector-index")
+    public ResponseEntity<?> rebuildVectorIndex() {
+        try {
+            RebuildService.RebuildResult result = rebuildService.rebuildVectorIndex();
+            return ResponseEntity.ok(Map.of(
+                "documentCount", result.documentCount(),
+                "chunkCount", result.chunkCount()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                .body(Map.of("error", "重建向量索引失败: " + e.getMessage()));
+        }
+    }
+
     private SystemConfigDto buildDto() {
         return new SystemConfigDto(
             new SystemConfigDto.Retrieval(
@@ -145,7 +187,21 @@ public class ConfigController {
                 config.getInt(K_CACHE_TTL, 3600)),
             new SystemConfigDto.Judge(
                 config.getBool(K_JUDGE_ENABLED, true),
-                config.get(K_JUDGE_MODEL, "qwen-turbo")),
+                config.get(K_JUDGE_MODEL, "qwen-turbo"),
+                config.getDouble(K_JUDGE_TEMPERATURE, 0.0)),
+            new SystemConfigDto.Generation(
+                config.getDouble(K_GEN_TEMPERATURE, 0.3),
+                config.getDouble(K_GEN_TOP_P, 1.0),
+                config.getInt(K_GEN_MAX_TOKENS, 0)),
+            new SystemConfigDto.Vector(
+                config.get(K_VECTOR_BACKEND, "pgvector"),
+                new SystemConfigDto.Pgvector(
+                    config.get(K_PG_INDEX_TYPE, "ivfflat"),
+                    config.getInt(K_PG_LISTS, 100),
+                    config.getInt(K_PG_PROBES, 1),
+                    config.getInt(K_PG_EF_SEARCH, 40)),
+                new SystemConfigDto.Elasticsearch(
+                    config.getInt(K_ES_NUM_CANDIDATES, 100))),
             MODEL_OPTIONS,
             EMBEDDING_DIMENSION,
             maskApiKey(config.get(K_API_KEY, "")));
@@ -159,7 +215,8 @@ public class ConfigController {
 
     private String validate(SystemConfigDto dto) {
         if (dto == null || dto.retrieval() == null || dto.models() == null
-                || dto.safety() == null || dto.cache() == null || dto.judge() == null) {
+                || dto.safety() == null || dto.cache() == null || dto.judge() == null
+                || dto.generation() == null) {
             return "配置不完整";
         }
         SystemConfigDto.Retrieval r = dto.retrieval();
@@ -176,6 +233,23 @@ public class ConfigController {
 
         SystemConfigDto.Cache c = dto.cache();
         if (c.ttlSeconds() <= 0) return "缓存 TTL 必须为正数";
+
+        SystemConfigDto.Generation g = dto.generation();
+        if (g.temperature() < 0 || g.temperature() > 2) return "temperature 必须在 [0,2]";
+        if (g.topP() <= 0 || g.topP() > 1) return "topP 必须在 (0,1]";
+        if (g.maxTokens() < 0) return "maxTokens 必须 >= 0（0 表示不限制）";
+        if (dto.judge().temperature() < 0 || dto.judge().temperature() > 2) return "评测 temperature 必须在 [0,2]";
+
+        SystemConfigDto.Vector v = dto.vector();
+        if (v != null) {
+            if (!VECTOR_BACKENDS.contains(v.backend())) return "非法向量后端: " + v.backend();
+            if (v.pgvector() == null || v.elasticsearch() == null) return "向量配置不完整";
+            if (!PG_INDEX_TYPES.contains(v.pgvector().indexType())) return "非法 pgvector 索引类型: " + v.pgvector().indexType();
+            if (v.pgvector().lists() <= 0) return "pgvector lists 必须为正数";
+            if (v.pgvector().probes() <= 0) return "pgvector probes 必须为正数";
+            if (v.pgvector().efSearch() <= 0) return "pgvector efSearch 必须为正数";
+            if (v.elasticsearch().numCandidates() <= 0) return "ES numCandidates 必须为正数";
+        }
 
         if (!isAllowedModel("chat", dto.models().chat())) return "不支持的对话模型: " + dto.models().chat();
         if (!isAllowedModel("embedding", dto.models().embedding())) return "不支持的向量模型: " + dto.models().embedding();

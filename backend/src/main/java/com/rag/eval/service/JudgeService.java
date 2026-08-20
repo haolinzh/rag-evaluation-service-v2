@@ -39,7 +39,7 @@ public class JudgeService {
 
     public JudgeResult judge(String model, String question, String answer, List<String> contexts) {
         String userPrompt = buildUserPrompt(question, answer, contexts);
-        DashScopeService.ChatResult chat = dashScope.chatWithModel(model, 0.0, SYSTEM_PROMPT, userPrompt);
+        DashScopeService.ChatResult chat = dashScope.chatForJudge(model, SYSTEM_PROMPT, userPrompt);
         JsonNode root = parseJson(chat.content());
 
         double faithfulness = clamp(root.path("faithfulness").asDouble(-1), -1, 0.0, 1.0);

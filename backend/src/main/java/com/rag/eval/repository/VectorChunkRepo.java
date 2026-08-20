@@ -4,6 +4,7 @@ import com.rag.eval.model.ChunkPreview;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -51,7 +52,15 @@ public class VectorChunkRepo {
         return flat.length() > 150 ? flat.substring(0, 150) + "…" : flat;
     }
 
-    public List<VectorSearchRow> similaritySearch(String queryEmbedding, double threshold, int topK) {
+    @Transactional
+    public List<VectorSearchRow> similaritySearch(String queryEmbedding, double threshold, int topK,
+                                                  String indexType, int probes, int efSearch) {
+        if ("hnsw".equalsIgnoreCase(indexType)) {
+            jdbc.execute("SET LOCAL hnsw.ef_search = " + efSearch);
+        } else {
+            jdbc.execute("SET LOCAL ivfflat.probes = " + probes);
+        }
+
         String sql = """
             SELECT chunk_id, file_name, chapter, section, content, source_type,
                    1 - (embedding <=> ?::vector) AS similarity
@@ -72,6 +81,21 @@ public class VectorChunkRepo {
             ),
             queryEmbedding, queryEmbedding, threshold, queryEmbedding, topK
         );
+    }
+
+    public void truncate() {
+        jdbc.update("TRUNCATE vector_chunks");
+    }
+
+    public void rebuildIndex(String indexType, int lists) {
+        jdbc.execute("DROP INDEX IF EXISTS idx_vector_chunks_embedding");
+        if ("hnsw".equalsIgnoreCase(indexType)) {
+            jdbc.execute("CREATE INDEX idx_vector_chunks_embedding ON vector_chunks " +
+                "USING hnsw (embedding vector_cosine_ops)");
+        } else {
+            jdbc.execute("CREATE INDEX idx_vector_chunks_embedding ON vector_chunks " +
+                "USING ivfflat (embedding vector_cosine_ops) WITH (lists = " + lists + ")");
+        }
     }
 
     public record VectorSearchRow(String chunkId, String fileName, String chapter, String section,

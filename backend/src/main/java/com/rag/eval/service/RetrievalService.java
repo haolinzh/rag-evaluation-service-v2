@@ -24,20 +24,20 @@ public class RetrievalService {
     private static final Logger log = LoggerFactory.getLogger(RetrievalService.class);
 
     private final ElasticsearchService esService;
-    private final VectorSearchService vectorService;
+    private final Map<String, VectorStore> vectorStores;
     private final RRFusionService rrfService;
     private final RerankService rerankService;
     private final DashScopeService dashScope;
     private final ConfigService config;
 
     public RetrievalService(ElasticsearchService esService,
-                            VectorSearchService vectorService,
+                            Map<String, VectorStore> vectorStores,
                             RRFusionService rrfService,
                             RerankService rerankService,
                             DashScopeService dashScope,
                             ConfigService config) {
         this.esService = esService;
-        this.vectorService = vectorService;
+        this.vectorStores = vectorStores;
         this.rrfService = rrfService;
         this.rerankService = rerankService;
         this.dashScope = dashScope;
@@ -56,7 +56,7 @@ public class RetrievalService {
 
         if ("vector".equals(effectiveMode)) {
             Instant vectorStart = Instant.now();
-            List<SearchResult> results = vectorService.semanticSearch(queryEmb, topK);
+            List<SearchResult> results = semanticSearch(queryEmb, topK);
             long vectorLatencyMs = Duration.between(vectorStart, Instant.now()).toMillis();
             logRetrieval(effectiveMode, 0, results.size(), 0, embeddingLatencyMs, 0, vectorLatencyMs, 0, results);
             return new RetrievalResult(results, List.of(), 0, results.size(), 0,
@@ -78,7 +78,7 @@ public class RetrievalService {
         CompletableFuture<List<SearchResult>> vectorFuture =
             CompletableFuture.supplyAsync(() -> {
                 Instant s = Instant.now();
-                List<SearchResult> r = vectorService.semanticSearch(queryEmb, recallSize);
+                List<SearchResult> r = semanticSearch(queryEmb, recallSize);
                 vectorLatency.set(Duration.between(s, Instant.now()).toMillis());
                 return r;
             });
@@ -158,5 +158,16 @@ public class RetrievalService {
     private String embedQuery(String query) {
         List<Double> embedding = dashScope.embed(query);
         return DashScopeService.embeddingToString(embedding);
+    }
+
+    private List<SearchResult> semanticSearch(String queryEmbedding, int topK) {
+        String backend = config.get("vector.backend", "pgvector");
+        double threshold = config.getDouble("retrieval.similarity-threshold", 0.4);
+        VectorStore store = vectorStores.get(backend);
+        if (store == null) {
+            log.warn("Unknown vector backend '{}', falling back to pgvector", backend);
+            store = vectorStores.get("pgvector");
+        }
+        return store.search(queryEmbedding, topK, threshold);
     }
 }

@@ -8,6 +8,8 @@ public record SystemConfigDto(
     Safety safety,
     Cache cache,
     Judge judge,
+    Generation generation,
+    Vector vector,
     List<ModelOption> modelOptions,
     int embeddingDimension,
     String apiKeyMasked
@@ -22,7 +24,15 @@ public record SystemConfigDto(
 
     public record Cache(boolean enabled, int ttlSeconds) {}
 
-    public record Judge(boolean enabled, String model) {}
+    public record Judge(boolean enabled, String model, double temperature) {}
+
+    public record Generation(double temperature, double topP, int maxTokens) {}
+
+    public record Vector(String backend, Pgvector pgvector, Elasticsearch elasticsearch) {}
+
+    public record Pgvector(String indexType, int lists, int probes, int efSearch) {}
+
+    public record Elasticsearch(int numCandidates) {}
 
     public record ModelOption(String group, String id, String label, Integer dimensions) {}
 }
