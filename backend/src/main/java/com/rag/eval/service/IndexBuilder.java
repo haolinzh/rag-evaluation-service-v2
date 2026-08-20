@@ -3,15 +3,20 @@ package com.rag.eval.service;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.Refresh;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 @Component
 public class IndexBuilder {
+
+    private static final Logger log = LoggerFactory.getLogger(IndexBuilder.class);
 
     private final ElasticsearchClient esClient;
     private final com.rag.eval.repository.VectorChunkRepo vectorChunkRepo;
@@ -29,26 +34,42 @@ public class IndexBuilder {
     }
 
     public void buildIndex(List<ChunkData> chunks) {
-        System.out.println("Indexing " + chunks.size() + " chunks...");
+        List<List<Double>> embeddings = embed(chunks);
+        write(chunks, embeddings);
+    }
 
+    /** Embed every chunk via DashScope, preserving order. Fails loudly so callers can
+     *  abort BEFORE destroying existing data (see RebuildService). */
+    public List<List<Double>> embed(List<ChunkData> chunks) {
+        log.info("Embedding {} chunks...", chunks.size());
+        List<List<Double>> all = new ArrayList<>();
         // DashScope text-embedding-v3 rejects batches larger than 10
         int batchSize = 10;
         for (int i = 0; i < chunks.size(); i += batchSize) {
             int end = Math.min(i + batchSize, chunks.size());
             List<ChunkData> batch = chunks.subList(i, end);
-
             List<String> texts = batch.stream().map(ChunkData::getContent).toList();
+            all.addAll(dashScope.embedBatch(texts));
+            log.info("Embedded {}/{} chunks", end, chunks.size());
+        }
+        log.info("Embedding complete.");
+        return all;
+    }
 
-            // Get embeddings via DashScope
-            List<List<Double>> embeddings = dashScope.embedBatch(texts);
+    /** Dual-write embedded chunks to ES + pgvector. */
+    public void write(List<ChunkData> chunks, List<List<Double>> embeddings) {
+        log.info("Writing {} chunks...", chunks.size());
+        int batchSize = 10;
+        for (int i = 0; i < chunks.size(); i += batchSize) {
+            int end = Math.min(i + batchSize, chunks.size());
+            List<ChunkData> batch = chunks.subList(i, end);
+            List<List<Double>> batchEmbs = embeddings.subList(i, end);
 
-            // Index to ES
-            indexToES(batch, embeddings);
+            indexToES(batch, batchEmbs);
 
-            // Index to pgvector
-            for (int j = 0; j < batch.size() && j < embeddings.size(); j++) {
+            for (int j = 0; j < batch.size() && j < batchEmbs.size(); j++) {
                 ChunkData chunk = batch.get(j);
-                String embStr = DashScopeService.embeddingToString(embeddings.get(j));
+                String embStr = DashScopeService.embeddingToString(batchEmbs.get(j));
                 vectorChunkRepo.insert(
                     chunk.getChunkId(), chunk.getFileName(), chunk.getSourceType(),
                     chunk.getLanguage(), chunk.getChapter(), chunk.getSection(),
@@ -56,10 +77,9 @@ public class IndexBuilder {
                 );
             }
 
-            System.out.printf("Indexed %d/%d chunks%n", end, chunks.size());
+            log.info("Wrote {}/{} chunks", end, chunks.size());
         }
-
-        System.out.println("Indexing complete.");
+        log.info("Write complete.");
     }
 
     private void indexToES(List<ChunkData> batch, List<List<Double>> embeddings) {
@@ -91,7 +111,9 @@ public class IndexBuilder {
             }
             esClient.bulk(bulkBuilder.build());
         } catch (Exception e) {
-            System.err.println("ES indexing failed: " + e.getMessage());
+            // 双写语义下，ES 写入失败不能静默吞掉，否则切到 ES 后端才发现缺数据。
+            log.error("ES indexing failed — ES 与 pgvector 将不同步: {}", e.getMessage(), e);
+            throw new RuntimeException("ES indexing failed: " + e.getMessage(), e);
         }
     }
 }

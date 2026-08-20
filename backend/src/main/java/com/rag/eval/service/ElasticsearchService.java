@@ -5,6 +5,8 @@ import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import com.rag.eval.model.SearchResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -14,6 +16,8 @@ import java.util.Map;
 
 @Service
 public class ElasticsearchService {
+
+    private static final Logger log = LoggerFactory.getLogger(ElasticsearchService.class);
 
     private final ElasticsearchClient esClient;
     private final ConfigService config;
@@ -34,7 +38,7 @@ public class ElasticsearchService {
                 .refresh(true)
                 .query(q -> q.term(t -> t.field("file_name.keyword").value(fileName))));
         } catch (Exception e) {
-            System.err.println("ES delete failed: " + e.getMessage());
+            log.warn("ES delete failed: {}", e.getMessage());
         }
     }
 
@@ -67,7 +71,7 @@ public class ElasticsearchService {
             }
             return results;
         } catch (Exception e) {
-            System.err.println("ES search failed: " + e.getMessage());
+            log.error("ES keyword search failed: {}", e.getMessage(), e);
             return List.of();
         }
     }
@@ -121,6 +125,9 @@ public class ElasticsearchService {
     }
 
     public List<SearchResult> knnSearch(List<Double> queryVector, int topK, int numCandidates, double threshold) {
+        // ES kNN requires num_candidates >= k; the hybrid recall size can exceed the
+        // configured default, so clamp up to avoid a silent empty result.
+        int effectiveNumCandidates = Math.max(numCandidates, topK);
         try {
             List<Float> queryFloats = queryVector.stream()
                 .map(Double::floatValue)
@@ -131,7 +138,7 @@ public class ElasticsearchService {
                     .field("embedding")
                     .queryVector(queryFloats)
                     .k((long) topK)
-                    .numCandidates((long) numCandidates))
+                    .numCandidates((long) effectiveNumCandidates))
                 .minScore(threshold)
                 .size(topK));
 
@@ -156,7 +163,8 @@ public class ElasticsearchService {
             }
             return results;
         } catch (Exception e) {
-            System.err.println("ES kNN search failed: " + e.getMessage());
+            log.error("ES kNN search failed (索引可能缺少 dense_vector 映射或维度不匹配，需执行「重建向量索引」): {}",
+                e.getMessage(), e);
             return List.of();
         }
     }

@@ -7,6 +7,7 @@ import com.rag.eval.repository.VectorChunkRepo;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -37,19 +38,21 @@ public class RebuildService {
 
     public record RebuildResult(int documentCount, int chunkCount) {}
 
+    private record PreparedDoc(List<ChunkData> chunks, List<List<Double>> embeddings) {}
+
     public RebuildResult rebuildVectorIndex() throws Exception {
         String indexType = config.get("vector.pgvector.index-type", "ivfflat");
         int lists = config.getInt("vector.pgvector.lists", 100);
 
-        // Clear both stores, then re-ingest from stored originals (dual write).
-        vectorChunkRepo.truncate();
-        esService.recreateIndex();
-
-        List<DocumentMeta> docs = docRepo.findAll();
-        int chunkCount = 0;
-        for (DocumentMeta meta : docs) {
+        // Phase 1: load + parse + split + EMBED every document BEFORE destroying anything.
+        // Any missing original, parse error, or embedding failure aborts here,
+        // leaving current data intact.
+        List<PreparedDoc> prepared = new ArrayList<>();
+        for (DocumentMeta meta : docRepo.findAll()) {
             byte[] bytes = fileStorage.load(meta.getStoredFileName());
-            if (bytes == null) continue;
+            if (bytes == null) {
+                throw new IllegalStateException("原始文件缺失，无法重建: " + meta.getFileName());
+            }
 
             DocumentParserService.ParsedDocument parsed =
                 parser.parse(new ByteArrayInputStream(bytes), meta.getFileName());
@@ -58,8 +61,18 @@ public class RebuildService {
             for (int i = 0; i < chunks.size(); i++) {
                 chunks.get(i).setChunkIndex(i);
             }
-            indexBuilder.buildIndex(chunks);
-            chunkCount += chunks.size();
+            List<List<Double>> embeddings = indexBuilder.embed(chunks);
+            prepared.add(new PreparedDoc(chunks, embeddings));
+        }
+
+        // Phase 2: clear both stores, then re-ingest from the prepared chunks (dual write).
+        vectorChunkRepo.truncate();
+        esService.recreateIndex();
+
+        int chunkCount = 0;
+        for (PreparedDoc doc : prepared) {
+            indexBuilder.write(doc.chunks(), doc.embeddings());
+            chunkCount += doc.chunks().size();
         }
 
         // Rebuild the pgvector index AFTER data is loaded so IVFFlat can cluster
@@ -67,7 +80,7 @@ public class RebuildService {
         vectorChunkRepo.rebuildIndex(indexType, lists);
 
         cacheService.clear();
-        return new RebuildResult(docs.size(), chunkCount);
+        return new RebuildResult(prepared.size(), chunkCount);
     }
 
     private ChunkConfig chunkConfigOf(DocumentMeta meta) {
