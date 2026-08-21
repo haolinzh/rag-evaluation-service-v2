@@ -2,7 +2,7 @@
 
 > 评审日期：2026-08-20
 > 范围：向量库可切换（pgvector / Elasticsearch 双写 + 重建入口）+ 生成参数（temperature/top_p/max_tokens）
-> 结论：共发现 10 个问题，本次修复 4 个（#1 / #2 / #3 / #5），其余留待后续评估。
+> 结论：共发现 10 个问题，已修复 5 个（#1 / #2 / #3 / #4 / #5），其余留待后续评估。
 
 ---
 
@@ -26,11 +26,11 @@
 - 现象：存量部署（旧动态映射索引没有 `embedding` 字段）切到 `elasticsearch` 时，kNN 抛 400，被吞成空列表：`vector` 模式直接无结果，hybrid 退化成纯关键词，运行时无任何报错信号。
 - 修复：改为 `log.error`（含异常明细与「需重建」提示），仍返回空列表以保持检索链路不硬崩，但问题可诊断。
 
-### #4 维度三处不一致（换 embedding 模型会坏） —— 未修复
+### #4 维度三处不一致（换 embedding 模型会坏） —— 已修复
 
 - 位置：`init-db.sql` / `ConfigController.EMBEDDING_DIMENSION` / `ElasticsearchService.embeddingDimension`
 - 现象：pgvector 列 `vector(1024)` 固定、`ConfigController` 常量 1024、ES 侧按模型动态（v2=1536 / v4=2048）。切到 v2/v4 时 ES 建新维度索引、pgvector 仍 1024，`?::vector` 强转报错；且「重建」不改 pgvector 列类型，救不了。前端「切换后需重新入库」的警告对 pgvector 是误导。
-- 状态：需产品决策是否支持多维度 embedding；否则应在配置层禁止选择维度 ≠ 1024 的模型。
+- 修复：决策为**不支持多维度 embedding**。`ConfigController.MODEL_OPTIONS` 移除 v2（1536）/v4（2048），仅保留 1024 维的 v1/v3；`ElasticsearchService.embeddingDimension()` 固定返回 1024，不再按模型 switch。`validate` 里 `isAllowedModel` 自动拒绝 v2/v4，封死 API 侧多维度入口。
 
 ### #5 `RebuildService` 无原子性、无错误处理 —— 已修复
 

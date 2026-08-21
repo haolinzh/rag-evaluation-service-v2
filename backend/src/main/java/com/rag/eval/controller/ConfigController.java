@@ -55,9 +55,7 @@ public class ConfigController {
         new SystemConfigDto.ModelOption("chat", "deepseek-r1", "DeepSeek R1 (深度思考)", null),
         new SystemConfigDto.ModelOption("chat", "qwen3-235b-a22b-thinking-2507", "Qwen3 235B Thinking (深度思考)", null),
         new SystemConfigDto.ModelOption("embedding", "text-embedding-v1", "text-embedding-v1", 1024),
-        new SystemConfigDto.ModelOption("embedding", "text-embedding-v2", "text-embedding-v2", 1536),
         new SystemConfigDto.ModelOption("embedding", "text-embedding-v3", "text-embedding-v3", 1024),
-        new SystemConfigDto.ModelOption("embedding", "text-embedding-v4", "text-embedding-v4", 2048),
         new SystemConfigDto.ModelOption("rerank", "qwen3-rerank", "qwen3-rerank", null),
         new SystemConfigDto.ModelOption("rerank", "gte-rerank", "gte-rerank", null)
     );

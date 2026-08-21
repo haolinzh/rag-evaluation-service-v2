@@ -20,14 +20,11 @@ public class ElasticsearchService {
     private static final Logger log = LoggerFactory.getLogger(ElasticsearchService.class);
 
     private final ElasticsearchClient esClient;
-    private final ConfigService config;
     private final String esIndexName;
 
     public ElasticsearchService(ElasticsearchClient esClient,
-                                ConfigService config,
                                 @Value("${elasticsearch.index-name}") String esIndexName) {
         this.esClient = esClient;
-        this.config = config;
         this.esIndexName = esIndexName;
     }
 
@@ -116,12 +113,9 @@ public class ElasticsearchService {
     }
 
     private int embeddingDimension() {
-        String model = config.get("dashscope.embedding-model", "text-embedding-v3");
-        return switch (model) {
-            case "text-embedding-v2" -> 1536;
-            case "text-embedding-v4" -> 2048;
-            default -> 1024;
-        };
+        // 维度全局固定 1024，与 init-db.sql 的 vector(1024) 和
+        // ConfigController.EMBEDDING_DIMENSION 对齐；不支持多维度 embedding 模型。
+        return 1024;
     }
 
     public List<SearchResult> knnSearch(List<Double> queryVector, int topK, int numCandidates, double threshold) {
