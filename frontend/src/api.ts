@@ -33,6 +33,11 @@ export async function deleteDocument(id: number): Promise<void> {
   await api.delete(`/documents/${id}`);
 }
 
+export async function reprocessDocument(id: number, config: ChunkConfig): Promise<DocumentMeta> {
+  const { data } = await api.put(`/documents/${id}`, null, { params: config });
+  return data;
+}
+
 export function downloadDocument(id: number): void {
   const a = document.createElement('a');
   a.href = `/api/documents/${id}/download`;

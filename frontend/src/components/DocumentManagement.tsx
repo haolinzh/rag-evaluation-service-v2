@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Drawer, Tag, Typography, Space, Empty, message } from 'antd';
-import { ArrowLeftOutlined, EyeOutlined, DownloadOutlined } from '@ant-design/icons';
-import type { DocumentMeta, ChunkPreview } from '../types';
-import { listDocuments, getDocumentChunks, downloadDocument } from '../api';
+import { Table, Button, Drawer, Tag, Typography, Space, Empty, message, Tooltip, Modal, Select, InputNumber, Input } from 'antd';
+import { ArrowLeftOutlined, EyeOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons';
+import type { DocumentMeta, ChunkPreview, ChunkConfig } from '../types';
+import { listDocuments, getDocumentChunks, downloadDocument, reprocessDocument } from '../api';
 
 interface Props {
   onBack: () => void;
@@ -26,6 +26,9 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
   const [previewDoc, setPreviewDoc] = useState<DocumentMeta | null>(null);
   const [previews, setPreviews] = useState<ChunkPreview[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [editingDoc, setEditingDoc] = useState<DocumentMeta | null>(null);
+  const [editForm, setEditForm] = useState<ChunkConfig>({ splitMode: 'size', chunkSize: 1000, delimiter: '', overlap: 150 });
+  const [saving, setSaving] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
@@ -40,6 +43,12 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
 
   useEffect(() => { refresh(); }, []);
 
+  useEffect(() => {
+    if (!documents.some(d => d.status === 'PENDING')) return;
+    const timer = setInterval(refresh, 2500);
+    return () => clearInterval(timer);
+  }, [documents]);
+
   const openPreview = async (doc: DocumentMeta) => {
     setPreviewDoc(doc);
     setPreviews([]);
@@ -53,25 +62,64 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
     }
   };
 
+  const openEdit = (doc: DocumentMeta) => {
+    setEditingDoc(doc);
+    setEditForm({
+      splitMode: doc.splitMode === 'delimiter' ? 'delimiter' : 'size',
+      chunkSize: doc.chunkSize ?? 1000,
+      delimiter: doc.delimiter ?? '',
+      overlap: doc.overlap ?? 150,
+    });
+  };
+
+  const handleSave = async () => {
+    if (!editingDoc) return;
+    setSaving(true);
+    try {
+      await reprocessDocument(editingDoc.id, editForm);
+      message.success('已提交重切分，后台处理中');
+      setEditingDoc(null);
+      refresh();
+    } catch (e) {
+      const msg = (e as { response?: { data?: { message?: string } } }).response?.data?.message;
+      message.error(msg || '重切分失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const columns = [
-    { title: '文件名', dataIndex: 'fileName', key: 'fileName', ellipsis: true },
-    { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', render: (v: string) => formatTime(v) },
-    { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', render: (v: string) => formatTime(v) },
+    { title: '编号', dataIndex: 'id', key: 'id', width: 70, sorter: (a: DocumentMeta, b: DocumentMeta) => a.id - b.id },
+    { title: '文件名', dataIndex: 'fileName', key: 'fileName', ellipsis: true, width: 200, sorter: (a: DocumentMeta, b: DocumentMeta) => a.fileName.localeCompare(b.fileName) },
     {
-      title: 'Chunk 方式', key: 'splitMode',
+      title: '状态', key: 'status', width: 100,
+      render: (_: unknown, r: DocumentMeta) => r.status === 'PENDING'
+        ? <Tag color="processing">处理中</Tag>
+        : r.status === 'FAILED'
+          ? <Tooltip title={r.errorMessage || '处理失败'}><Tag color="error">失败</Tag></Tooltip>
+          : <Tag color="success">已就绪</Tag>,
+      sorter: (a: DocumentMeta, b: DocumentMeta) => (a.status ?? '').localeCompare(b.status ?? ''),
+    },
+    { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 160, render: (v: string) => formatTime(v), sorter: (a: DocumentMeta, b: DocumentMeta) => (a.updatedAt ?? '').localeCompare(b.updatedAt ?? '') },
+    {
+      title: 'Chunk 方式', key: 'splitMode', width: 120,
       render: (_: unknown, r: DocumentMeta) => r.splitMode === 'delimiter'
         ? <Tag color="purple">特殊字符{r.delimiter ? ` (${r.delimiter})` : ''}</Tag>
         : r.splitMode === 'size' ? <Tag color="blue">按大小</Tag> : '—',
+      sorter: (a: DocumentMeta, b: DocumentMeta) => (a.splitMode ?? '').localeCompare(b.splitMode ?? ''),
     },
-    { title: 'Chunk 大小', dataIndex: 'chunkSize', key: 'chunkSize', render: (v?: number) => v != null ? `${v} 字符` : '—' },
-    { title: 'Overlap', dataIndex: 'overlap', key: 'overlap', render: (v?: number) => v != null ? `${v} 字符` : '—' },
-    { title: 'Chunk 数', dataIndex: 'chunkCount', key: 'chunkCount' },
-    { title: '文件大小', dataIndex: 'fileSize', key: 'fileSize', render: (v?: number) => formatSize(v) },
+    { title: 'Chunk 大小', dataIndex: 'chunkSize', key: 'chunkSize', width: 100, render: (v?: number) => v != null ? `${v} 字符` : '—', sorter: (a: DocumentMeta, b: DocumentMeta) => (a.chunkSize ?? 0) - (b.chunkSize ?? 0) },
+    { title: 'Overlap', dataIndex: 'overlap', key: 'overlap', width: 90, render: (v?: number) => v != null ? `${v} 字符` : '—', sorter: (a: DocumentMeta, b: DocumentMeta) => (a.overlap ?? 0) - (b.overlap ?? 0) },
+    { title: 'Chunk 数', dataIndex: 'chunkCount', key: 'chunkCount', width: 90, render: (v?: number) => v != null ? v : '—', sorter: (a: DocumentMeta, b: DocumentMeta) => (a.chunkCount ?? -1) - (b.chunkCount ?? -1) },
+    { title: '向量模型', dataIndex: 'embeddingModel', key: 'embeddingModel', width: 160, render: (v?: string) => v || '—', sorter: (a: DocumentMeta, b: DocumentMeta) => (a.embeddingModel ?? '').localeCompare(b.embeddingModel ?? '') },
+    { title: '维度', dataIndex: 'embeddingDimension', key: 'embeddingDimension', width: 80, render: (v?: number) => v != null ? v : '—', sorter: (a: DocumentMeta, b: DocumentMeta) => (a.embeddingDimension ?? 0) - (b.embeddingDimension ?? 0) },
+    { title: '文件大小', dataIndex: 'fileSize', key: 'fileSize', width: 100, render: (v?: number) => formatSize(v), sorter: (a: DocumentMeta, b: DocumentMeta) => (a.fileSize ?? 0) - (b.fileSize ?? 0) },
     {
-      title: '操作', key: 'action',
+      title: '操作', key: 'action', width: 210,
       render: (_: unknown, r: DocumentMeta) => (
         <Space size={4}>
           <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>预览</Button>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>重切分</Button>
           <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadDocument(r.id)}>下载</Button>
         </Space>
       ),
@@ -90,9 +138,51 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
         dataSource={documents}
         columns={columns}
         loading={loading}
-        pagination={{ pageSize: 10 }}
-        scroll={{ x: 1000, y: 'calc(100vh - 220px)' }}
+        pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 个文档` }}
+        scroll={{ x: 1480, y: 'calc(100vh - 220px)' }}
       />
+
+      <Modal
+        title={editingDoc ? `重切分 — ${editingDoc.fileName}` : '重切分'}
+        open={!!editingDoc}
+        onCancel={() => setEditingDoc(null)}
+        onOk={handleSave}
+        okText="保存并重建"
+        cancelText="取消"
+        confirmLoading={saving}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>切分方式</div>
+            <Select
+              value={editForm.splitMode}
+              onChange={v => setEditForm({ ...editForm, splitMode: v })}
+              style={{ width: '100%' }}
+              options={[
+                { value: 'size', label: '按大小 (size)' },
+                { value: 'delimiter', label: '特殊字符 (分隔符)' },
+              ]}
+            />
+          </div>
+          {editForm.splitMode === 'size' ? (
+            <>
+              <div>
+                <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>Chunk 大小（字符）</div>
+                <InputNumber min={50} max={5000} value={editForm.chunkSize} onChange={v => setEditForm({ ...editForm, chunkSize: v ?? 1000 })} style={{ width: '100%' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>Overlap（字符）</div>
+                <InputNumber min={0} max={500} value={editForm.overlap} onChange={v => setEditForm({ ...editForm, overlap: v ?? 150 })} style={{ width: '100%' }} />
+              </div>
+            </>
+          ) : (
+            <div>
+              <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>分隔符</div>
+              <Input value={editForm.delimiter} onChange={e => setEditForm({ ...editForm, delimiter: e.target.value })} placeholder="如 ## 或 ###" />
+            </div>
+          )}
+        </div>
+      </Modal>
 
       <Drawer
         title={previewDoc ? `Chunk 预览 — ${previewDoc.fileName}` : 'Chunk 预览'}
@@ -102,6 +192,9 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
       >
         {previewLoading && <div style={{ textAlign: 'center', padding: 24 }}>加载中…</div>}
         {!previewLoading && previews.length === 0 && <Empty description="暂无 chunk" />}
+        {!previewLoading && previews.length > 0 && (
+          <div style={{ marginBottom: 8, color: '#8c8c8c', fontSize: 12 }}>共 {previews.length} 个 chunk</div>
+        )}
         {!previewLoading && previews.map(p => (
           <div key={p.chunkIndex} style={{ marginBottom: 12, padding: 10, background: '#fafafa', borderRadius: 8 }}>
             <Space size={6} style={{ marginBottom: 4 }}>
@@ -109,7 +202,7 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
               {p.chapter && <Tag color="green">{p.chapter}</Tag>}
               {p.section && <Tag color="cyan">{p.section}</Tag>}
             </Space>
-            <div style={{ fontSize: 13, color: '#555', whiteSpace: 'pre-wrap' }}>{p.snippet}</div>
+            <div style={{ fontSize: 13, color: '#555', whiteSpace: 'pre-wrap' }}>{p.content}</div>
           </div>
         ))}
       </Drawer>

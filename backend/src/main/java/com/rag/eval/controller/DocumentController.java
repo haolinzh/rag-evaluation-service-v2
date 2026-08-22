@@ -29,9 +29,9 @@ public class DocumentController {
     public ResponseEntity<DocumentMeta> upload(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "splitMode", defaultValue = ChunkConfig.MODE_SIZE) String splitMode,
-            @RequestParam(value = "chunkSize", defaultValue = "500") int chunkSize,
+            @RequestParam(value = "chunkSize", defaultValue = "1000") int chunkSize,
             @RequestParam(value = "delimiter", defaultValue = "") String delimiter,
-            @RequestParam(value = "overlap", defaultValue = "50") int overlap) throws Exception {
+            @RequestParam(value = "overlap", defaultValue = "150") int overlap) throws Exception {
         ChunkConfig config = new ChunkConfig(splitMode, chunkSize, delimiter, overlap);
         return ResponseEntity.ok(documentService.ingest(file, config));
     }
@@ -45,6 +45,17 @@ public class DocumentController {
     public ResponseEntity<Map<String, String>> delete(@PathVariable Long id) {
         documentService.deleteById(id);
         return ResponseEntity.ok(Map.of("message", "Deleted"));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<DocumentMeta> reprocess(
+            @PathVariable Long id,
+            @RequestParam(value = "splitMode", defaultValue = ChunkConfig.MODE_SIZE) String splitMode,
+            @RequestParam(value = "chunkSize", defaultValue = "1000") int chunkSize,
+            @RequestParam(value = "delimiter", defaultValue = "") String delimiter,
+            @RequestParam(value = "overlap", defaultValue = "150") int overlap) {
+        ChunkConfig config = new ChunkConfig(splitMode, chunkSize, delimiter, overlap);
+        return ResponseEntity.ok(documentService.reprocess(id, config));
     }
 
     @GetMapping("/{id}/chunks")

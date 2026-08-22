@@ -9,13 +9,17 @@ export interface DocumentMeta {
   chunkSize?: number;
   overlap?: number;
   delimiter?: string;
+  status?: 'PENDING' | 'READY' | 'FAILED';
+  errorMessage?: string;
+  embeddingModel?: string;
+  embeddingDimension?: number;
 }
 
 export interface ChunkPreview {
   chunkIndex: number;
   chapter: string | null;
   section: string | null;
-  snippet: string;
+  content: string;
 }
 
 export interface ChunkConfig {

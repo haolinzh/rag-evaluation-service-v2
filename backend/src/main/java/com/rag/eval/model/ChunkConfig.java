@@ -8,8 +8,8 @@ public record ChunkConfig(
 ) {
     public static final String MODE_SIZE = "size";
     public static final String MODE_DELIMITER = "delimiter";
-    public static final int DEFAULT_CHUNK_SIZE = 500;
-    public static final int DEFAULT_OVERLAP = 50;
+    public static final int DEFAULT_CHUNK_SIZE = 1000;
+    public static final int DEFAULT_OVERLAP = 150;
 
     public static ChunkConfig defaults() {
         return new ChunkConfig(MODE_SIZE, DEFAULT_CHUNK_SIZE, "", DEFAULT_OVERLAP);

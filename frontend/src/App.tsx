@@ -32,6 +32,12 @@ const App: React.FC = () => {
   useEffect(() => { refreshDocuments(); }, []);
 
   useEffect(() => {
+    if (!documents.some(d => d.status === 'PENDING')) return;
+    const timer = setInterval(refreshDocuments, 2500);
+    return () => clearInterval(timer);
+  }, [documents]);
+
+  useEffect(() => {
     fetchConfig()
       .then((c) => setRetrievalMode(c.retrieval.mode))
       .catch(() => {});

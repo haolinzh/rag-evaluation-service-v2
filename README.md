@@ -42,7 +42,7 @@
 
 ![文档管理页](docs/screenshot-documents.jpg)
 
-**文档管理**：查看已入库文档的名称、分块方式与时间，支持删除，检索语料由此管理。
+**文档管理**：表格展示编号、状态、切分参数、向量模型/维度等信息，支持列排序、chunk 完整内容预览、重切分（改切分参数后一键重建向量）、下载与删除。
 
 ![日志管理](docs/screenshot-log-detail.jpg)
 
@@ -71,6 +71,8 @@
 | **一键评测** | 前端「测评」页一键跑测试题，对比 hybrid / vector / hybrid-rerank 三模式，SSE 实时进度 + 5 项质量指标对比；支持后台运行、按题型筛选 |
 | **评测结果持久化** | 每次评测报告持久化到 PostgreSQL（`evaluation_run` 表），进入测评页可回看任意历史测评 |
 | **语料自动入库** | 测评开始前自动检查 8 份 case study 语料，缺失的自动解析/分块/向量化并双写 ES（含 dense_vector）+ pgvector，无需手动上传 |
+| **文档异步入库** | 上传即返回 `PENDING`，后台线程解析+分块+向量化+双写，完成后标 `READY`、失败标 `FAILED`；前端轮询自动刷新，大文件上传不再卡 UI |
+| **文档重切分** | 文档管理页可编辑切分方式 / chunk 大小 / overlap，保存后清旧向量并重新分块+向量化（复用原文件，无需重传） |
 | **向量库可切换** | 语义检索后端支持 pgvector / Elasticsearch dense_vector 运行时切换，入库双写两库、切换即时生效无需重新入库；索引类型/lists 等建索引参数改动后一键重建 |
 | **测试集管理** | 测试题存入 PostgreSQL（`evaluation_question` 表），支持增删改查、按题型/难度/语言标注，评测可按题型子集运行 |
 | **运行时配置** | 检索参数、模型选择、生成参数、向量后端、安全阈值、语义缓存可通过「系统配置」页热更新，持久化到 `system_config` 表，无需重启 |
@@ -308,8 +310,8 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
                         │            │ │dense_vect│ │           │
                         └────────────┘ └──────────┘ └───────────┘
 
-         入库流程: 前端「文档上传」→ Tika 解析 → 分块 → DashScope embedding
-                     → 双写 ES（含 dense_vector）+ pgvector 向量插入
+         入库流程: 前端「文档上传」→ 落盘并立即返回 PENDING → 后台线程 Tika 解析 → 分块
+                     → DashScope embedding → 双写 ES（含 dense_vector）+ pgvector，完成后标 READY
 
          评测流程: 前端「测评」→ POST /api/evaluation/run (SSE)
                      → 语料自动入库检查 → 逐题调用 ChatService → 指标打分
@@ -379,7 +381,8 @@ rag-evaluation-service/
 | `POST` | `/api/documents/upload` | 上传文档 (multipart，可带 `splitMode`/`chunkSize`/`overlap`/`delimiter` 参数) |
 | `GET` | `/api/documents` | 文档列表 |
 | `DELETE` | `/api/documents/{id}` | 删除文档 |
-| `GET` | `/api/documents/{id}/chunks` | 文档 chunk 预览 |
+| `PUT` | `/api/documents/{id}` | 重切分文档（更新切分参数并重建向量，参数 `splitMode`/`chunkSize`/`overlap`/`delimiter`） |
+| `GET` | `/api/documents/{id}/chunks` | 文档 chunk 完整内容预览 |
 | `GET` | `/api/logs?limit=100` | 请求日志列表（按 id 倒序） |
 | `DELETE` | `/api/logs` | 清空请求日志 |
 | `POST` | `/api/cache/clear` | 清空语义缓存 |
@@ -452,7 +455,7 @@ retrieval:
 
 | 类型 | 处理方式 |
 |---|---|
-| **数字原生 PDF/DOCX** | Tika 提取文本 → 章节检测（`^第[一二三四五六七八九十百]+章`）→ 按 500 字符分块、50 字符重叠，携带 `{chapter, section, chunk_index}` 元数据 |
+| **数字原生 PDF/DOCX** | Tika 提取文本 → 章节检测（`^第[一二三四五六七八九十百]+章`）→ 按 1000 字符分块、150 字符重叠，携带 `{chapter, section, chunk_index}` 元数据 |
 | **扫描版 PDF** | Tika 内置 OCR 提取 → 按页边界切分（无结构化标题）→ 更大分块补偿 OCR 噪音，标记 `source_type="scanned"` |
 | **双语混合文档** | 不做翻译，保留原文，靠 `text-embedding-v3` 多语言向量天然跨语言检索 |
 
@@ -472,7 +475,7 @@ chunk 元数据（同时写入 ES `_source` 与 pgvector `vector_chunks` 表）�
 }
 ```
 
-分块参数（切分方式 `size`/`delimiter`、chunk 大小、overlap、分隔符）支持在上传时通过接口或前端配置，`DocumentMeta` 持久化记录每次入库的参数；文档管理页可查看每个文档的 chunk 预览（`GET /api/documents/{id}/chunks`）。
+分块参数（切分方式 `size`/`delimiter`、chunk 大小、overlap、分隔符）支持在上传时通过接口或前端配置，默认按 1000 字符分块、150 字符重叠；`DocumentMeta` 持久化记录每次入库的参数（含向量模型与维度）。文档管理页可查看每个文档的 chunk 完整内容预览（`GET /api/documents/{id}/chunks`），并可编辑切分参数一键重切分（`PUT /api/documents/{id}`）。
 
 ---
 

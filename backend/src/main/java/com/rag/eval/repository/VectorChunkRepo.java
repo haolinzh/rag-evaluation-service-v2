@@ -34,26 +34,19 @@ public class VectorChunkRepo {
         jdbc.update("DELETE FROM vector_chunks WHERE file_name = ?", fileName);
     }
 
-    public List<ChunkPreview> findPreviewsByFileName(String fileName, int limit) {
+    public List<ChunkPreview> findPreviewsByFileName(String fileName) {
         String sql = """
             SELECT chunk_index, chapter, section, content
             FROM vector_chunks
             WHERE file_name = ?
             ORDER BY chunk_index
-            LIMIT ?
             """;
         return jdbc.query(sql, (rs, rowNum) -> new ChunkPreview(
             rs.getInt("chunk_index"),
             rs.getString("chapter"),
             rs.getString("section"),
-            snippet(rs.getString("content"))
-        ), fileName, limit);
-    }
-
-    private String snippet(String content) {
-        if (content == null) return "";
-        String flat = content.replaceAll("\\s+", " ").trim();
-        return flat.length() > 150 ? flat.substring(0, 150) + "…" : flat;
+            rs.getString("content")
+        ), fileName);
     }
 
     public List<VectorSearchRow> similaritySearch(String queryEmbedding, double threshold, int topK,

@@ -21,16 +21,16 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [splitMode, setSplitMode] = useState<'size' | 'delimiter'>('size');
-  const [chunkSize, setChunkSize] = useState(500);
+  const [chunkSize, setChunkSize] = useState(1000);
   const [delimiter, setDelimiter] = useState('');
-  const [overlap, setOverlap] = useState(50);
+  const [overlap, setOverlap] = useState(150);
 
   const doUpload = async (file: File) => {
     setUploading(true);
     setProgress(0);
     try {
       await uploadDocument(file, { splitMode, chunkSize, delimiter, overlap }, setProgress);
-      message.success(`${file.name} 上传成功`);
+      message.success(`${file.name} 已上传，后台处理中`);
       onRefresh();
     } catch (err) {
       const msg = (err as { response?: { data?: { message?: string } } }).response?.data?.message;
@@ -100,14 +100,14 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
         <div style={{ flex: 1 }}>
           <div style={labelStyle}>{splitMode === 'size' ? 'Chunk 大小（字符）' : '分隔符'}</div>
           {splitMode === 'size' ? (
-            <InputNumber min={50} max={5000} value={chunkSize} onChange={v => setChunkSize(v ?? 500)} style={{ width: '100%' }} />
+            <InputNumber min={50} max={5000} value={chunkSize} onChange={v => setChunkSize(v ?? 1000)} style={{ width: '100%' }} />
           ) : (
             <Input value={delimiter} onChange={e => setDelimiter(e.target.value)} placeholder="如 ## 或 ###" />
           )}
         </div>
         <div style={{ flex: 1 }}>
           <div style={labelStyle}>Overlap（字符）</div>
-          <InputNumber min={0} max={500} value={overlap} onChange={v => setOverlap(v ?? 50)} disabled={splitMode === 'delimiter'} style={{ width: '100%' }} />
+          <InputNumber min={0} max={500} value={overlap} onChange={v => setOverlap(v ?? 150)} disabled={splitMode === 'delimiter'} style={{ width: '100%' }} />
         </div>
       </div>
 
@@ -127,7 +127,7 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
         <Progress
           percent={progress >= 100 ? 99 : progress}
           status="active"
-          format={() => (progress >= 100 ? '正在解析文档并生成向量…' : `上传中 ${progress}%`)}
+          format={() => `上传中 ${Math.min(progress, 99)}%`}
           style={{ marginBottom: 12 }}
         />
       )}
@@ -136,7 +136,7 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
         <Text type="secondary" style={{ fontSize: 12 }}>{documents.length} 个文档</Text>
         <span>
           <Button type="text" size="small" icon={<ReloadOutlined />} onClick={onRefresh}>刷新</Button>
-          <Button type="text" size="small" icon={<FolderOpenOutlined />} onClick={onOpenManagement}>详情</Button>
+          <Button type="text" size="small" icon={<FolderOpenOutlined />} onClick={onOpenManagement}>管理</Button>
         </span>
       </div>
 
@@ -162,9 +162,17 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
                 </Tooltip>
               }
               description={
-                <Space size={4}>
+                <Space size={4} wrap>
                   <Tag style={{ marginInlineEnd: 0 }}>{formatSize(doc.fileSize)}</Tag>
-                  <Tag style={{ marginInlineEnd: 0 }}>{doc.chunkCount} chunks</Tag>
+                  {doc.status === 'PENDING' ? (
+                    <Tag color="processing" style={{ marginInlineEnd: 0 }}>处理中</Tag>
+                  ) : doc.status === 'FAILED' ? (
+                    <Tooltip title={doc.errorMessage || '处理失败'}>
+                      <Tag color="error" style={{ marginInlineEnd: 0 }}>失败</Tag>
+                    </Tooltip>
+                  ) : (
+                    <Tag style={{ marginInlineEnd: 0 }}>{doc.chunkCount} chunks</Tag>
+                  )}
                 </Space>
               }
             />

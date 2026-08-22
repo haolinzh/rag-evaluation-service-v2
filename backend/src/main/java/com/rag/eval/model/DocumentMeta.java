@@ -46,6 +46,18 @@ public class DocumentMeta {
     @Column(name = "stored_file_name")
     private String storedFileName;
 
+    @Column(name = "status")
+    private String status = "PENDING";
+
+    @Column(name = "error_message")
+    private String errorMessage;
+
+    @Column(name = "embedding_model")
+    private String embeddingModel;
+
+    @Column(name = "embedding_dimension")
+    private Integer embeddingDimension;
+
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
