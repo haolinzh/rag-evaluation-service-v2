@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta } from './types';
+import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta, OpsStatus, ChunkPage } from './types';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -126,6 +126,23 @@ export async function fetchReport(): Promise<Blob> {
 
 export async function fetchMetricsSummary(): Promise<OpsReport> {
   const { data } = await api.get('/report/summary');
+  return data;
+}
+
+export async function fetchOpsStatus(): Promise<OpsStatus> {
+  const { data } = await api.get('/ops/status');
+  return data;
+}
+
+export async function fetchChunks(
+  backend: 'pg' | 'es',
+  fileName: string,
+  page: number,
+  size: number
+): Promise<ChunkPage> {
+  const { data } = await api.get('/ops/chunks', {
+    params: { backend, fileName: fileName || undefined, page, size },
+  });
   return data;
 }
 

@@ -211,6 +211,62 @@ export interface EvaluationRunMeta {
   judgeModel?: string | null;
 }
 
+export interface EsStatus {
+  clusterName: string | null;
+  version: string | null;
+  status: string | null;
+  nodeCount: number;
+  dataNodeCount: number;
+  activePrimaryShards: number;
+  activeShards: number;
+  relocatingShards: number;
+  unassignedShards: number;
+  pendingTasks: number;
+  indexName: string;
+  docCount: number;
+  storeSizeBytes: number;
+  heapUsedPercent: number;
+  cpuPercent: number;
+  error: string | null;
+}
+
+export interface PgStatus {
+  version: string | null;
+  databaseSizeBytes: number;
+  numBackends: number;
+  xactCommit: number;
+  xactRollback: number;
+  deadlocks: number;
+  cacheHitRatio: number;
+  tableName: string;
+  liveTuples: number;
+  deadTuples: number;
+  seqScan: number;
+  indexScan: number;
+  chunkCount: number;
+  indexSizeBytes: number;
+  error: string | null;
+}
+
+export interface OpsStatus {
+  es: EsStatus;
+  pg: PgStatus;
+}
+
+export interface ChunkRecord {
+  chunkId: string;
+  fileName: string;
+  chapter: string | null;
+  section: string | null;
+  chunkIndex: number | null;
+  content: string;
+}
+
+export interface ChunkPage {
+  total: number;
+  items: ChunkRecord[];
+}
+
 export type EvaluationEvent =
   | { type: 'ingest_start'; missing: string[]; total: number }
   | { type: 'ingesting'; fileName: string }
