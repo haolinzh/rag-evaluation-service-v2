@@ -68,10 +68,9 @@ public class DashScopeService {
             );
             Map<String, Object> parameters = new LinkedHashMap<>();
             parameters.put("result_format", "message");
+            parameters.put("temperature", temperature);
             if (topP < 1.0) {
                 parameters.put("top_p", topP);
-            } else {
-                parameters.put("temperature", temperature);
             }
             if (maxTokens > 0) {
                 parameters.put("max_tokens", maxTokens);
@@ -138,11 +137,10 @@ public class DashScopeService {
             Map<String, Object> parameters = new LinkedHashMap<>();
             parameters.put("result_format", "message");
             parameters.put("incremental_output", true);
+            parameters.put("temperature", config.getDouble("generation.temperature", 0.3));
             double topP = config.getDouble("generation.top-p", 1.0);
             if (topP < 1.0) {
                 parameters.put("top_p", topP);
-            } else {
-                parameters.put("temperature", config.getDouble("generation.temperature", 0.3));
             }
             int maxTokens = config.getInt("generation.max-tokens", 0);
             if (maxTokens > 0) {

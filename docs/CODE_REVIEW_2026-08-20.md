@@ -2,7 +2,7 @@
 
 > 评审日期：2026-08-20
 > 范围：向量库可切换（pgvector / Elasticsearch 双写 + 重建入口）+ 生成参数（temperature/top_p/max_tokens）
-> 结论：共发现 10 个问题，已修复 5 个（#1 / #2 / #3 / #4 / #5），其余留待后续评估。
+> 结论：共发现 10 个问题，已全部修复（#1–#10）。
 
 ---
 
@@ -42,34 +42,36 @@
 
 ## 中优先级
 
-### #6 `ensureVectorIndex` 并发竞态 —— 未修复
+### #6 `ensureVectorIndex` 并发竞态 —— 已修复
 
 - 位置：`ElasticsearchService.ensureVectorIndex`
 - 现象：「先 exists 再 create」两步非原子，首启并发上传时第二个 `createIndex` 抛 `resource_already_exists_exception` → 上传失败。
-- 建议：捕获 already-exists 异常，或加锁/幂等建索引。
+- 修复：捕获 `ElasticsearchException`，当 `error().type()` 为 `resource_already_exists_exception` 时视为索引已建好、直接返回；其余异常照常抛出。
 
-### #7 `SET LOCAL` + `@Transactional` 可能不生效 —— 未修复（需验证）
+### #7 `SET LOCAL` + `@Transactional` 可能不生效 —— 已修复
 
 - 位置：`VectorChunkRepo.similaritySearch`
 - 现象：项目为 JPA，默认事务管理器 `JpaTransactionManager` 不一定把 `JdbcTemplate` 的 DataSource 连接 enlist 进事务，`SET LOCAL ivfflat.probes / hnsw.ef_search` 可能跑在另一 autocommit 连接上（报错或静默不生效）。因只影响召回质量、不影响能否运行，功能测试难发现。
-- 建议：改用显式 `TransactionTemplate` + `DataSourceTransactionManager`，或同一连接内 `SET LOCAL` + 查询。
+- 修复：移除 `@Transactional`，注入 `DataSource` 构造 `TransactionTemplate(new DataSourceTransactionManager(dataSource))`，把 `SET LOCAL` 与查询包进同一事务、同一连接；事务结束连接归还，`SET LOCAL` 不泄漏到连接池。
 
-### #8 `generate()` 里 temperature 与 top_p 互斥 —— 未修复
+### #8 `generate()` 里 temperature 与 top_p 互斥 —— 已修复
 
-- 位置：`DashScopeService.generate`
+- 位置：`DashScopeService.generate` / `chatStream`
 - 现象：`if (topP < 1.0) 只发 top_p else 只发 temperature`。同时设 `temperature=0.3` + `top_p=0.8` 时 temperature 被丢弃、走 DashScope 默认。
-- 建议：与 UI 文案确认意图；通常两者应可同时下发。
+- 修复：两处均改为无条件下发 `temperature`，`top_p` 仅在 `< 1.0` 时额外下发，二者可同时生效。
 
 ---
 
 ## 低优先级
 
-### #9 `RebuildResult.chunkCount` 可能虚高 —— 未修复
+### #9 `RebuildResult.chunkCount` 可能虚高 —— 已修复
 
-- 位置：`RebuildService` / `IndexBuilder.buildIndex`
+- 位置：`RebuildService` / `IndexBuilder.embed`
 - 现象：`chunkCount` 按 `splitAndEnrich` 结果计数，而 `buildIndex` 实际可能少写（`embedBatch` 返回条数不足时 `j < embeddings.size()` 截断）。
+- 修复：`IndexBuilder.embed` 末尾校验 `embeddings.size() == chunks.size()`，不一致即抛异常（杜绝静默丢数据）；`RebuildService` 改按 `doc.embeddings().size()` 统计，与实际写入数一致。
 
-### #10 `parseEmbedding` 空向量边界 —— 未修复
+### #10 `parseEmbedding` 空向量边界 —— 已修复
 
-- 位置：`ElasticsearchVectorStore.parseEmbedding`
+- 位置：`ElasticsearchVectorStore.search`
 - 现象：embed 失败返回 `List.of()` 时走 `knnSearch(空)` → ES 报错 → 空列表，不崩但无提示。
+- 修复：`search` 里解析向量后判空，为空则 `log.warn` 并直接返回空列表，避免无意义的 ES kNN 调用与报错。

@@ -1,6 +1,8 @@
 package com.rag.eval.service;
 
 import com.rag.eval.model.SearchResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
@@ -8,6 +10,8 @@ import java.util.List;
 
 @Component("elasticsearch")
 public class ElasticsearchVectorStore implements VectorStore {
+
+    private static final Logger log = LoggerFactory.getLogger(ElasticsearchVectorStore.class);
 
     private final ElasticsearchService esService;
     private final ConfigService config;
@@ -21,6 +25,10 @@ public class ElasticsearchVectorStore implements VectorStore {
     public List<SearchResult> search(String queryEmbedding, int topK, double threshold) {
         int numCandidates = config.getInt("vector.elasticsearch.num-candidates", 100);
         List<Double> vector = parseEmbedding(queryEmbedding);
+        if (vector.isEmpty()) {
+            log.warn("查询向量为空（embedding 可能失败），跳过 ES kNN 检索");
+            return List.of();
+        }
         return esService.knnSearch(vector, topK, numCandidates, threshold);
     }
 

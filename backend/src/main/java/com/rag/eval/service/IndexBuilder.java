@@ -52,6 +52,10 @@ public class IndexBuilder {
             all.addAll(dashScope.embedBatch(texts));
             log.info("Embedded {}/{} chunks", end, chunks.size());
         }
+        if (all.size() != chunks.size()) {
+            throw new IllegalStateException(
+                "embedding 返回条数 (" + all.size() + ") 与 chunk 数 (" + chunks.size() + ") 不一致，中止避免静默丢数据");
+        }
         log.info("Embedding complete.");
         return all;
     }

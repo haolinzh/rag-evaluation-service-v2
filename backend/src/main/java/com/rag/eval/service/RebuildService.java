@@ -72,7 +72,7 @@ public class RebuildService {
         int chunkCount = 0;
         for (PreparedDoc doc : prepared) {
             indexBuilder.write(doc.chunks(), doc.embeddings());
-            chunkCount += doc.chunks().size();
+            chunkCount += doc.embeddings().size();
         }
 
         // Rebuild the pgvector index AFTER data is loaded so IVFFlat can cluster

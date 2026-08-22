@@ -1,6 +1,7 @@
 package com.rag.eval.service;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
@@ -93,6 +94,15 @@ public class ElasticsearchService {
             }
             // 索引已存在时不动：存量旧索引缺少 dense_vector 映射的迁移只能显式重建，
             // 因为 ES 不允许对已有字段改类型，且删索引重建需全量重入库。
+        } catch (ElasticsearchException e) {
+            // exists + create 两步非原子：首启并发上传时两个请求可能同时通过 exists
+            // 检查，第二个 create 抛 resource_already_exists_exception——此时索引已建好，
+            // 视为成功即可，避免无谓的上传失败。
+            if (e.error() != null && "resource_already_exists_exception".equals(e.error().type())) {
+                log.info("ES index {} already exists (concurrent create), skipping", esIndexName);
+                return;
+            }
+            throw new RuntimeException("ES index ensure failed: " + e.getMessage(), e);
         } catch (Exception e) {
             throw new RuntimeException("ES index ensure failed: " + e.getMessage(), e);
         }
