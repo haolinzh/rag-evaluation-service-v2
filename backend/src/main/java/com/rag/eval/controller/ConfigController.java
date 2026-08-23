@@ -3,6 +3,7 @@ package com.rag.eval.controller;
 import com.rag.eval.model.SystemConfigDto;
 import com.rag.eval.service.ConfigService;
 import com.rag.eval.service.RebuildService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -54,7 +55,6 @@ public class ConfigController {
         new SystemConfigDto.ModelOption("chat", "qwen2.5-72b-instruct", "qwen2.5-72b-instruct", null),
         new SystemConfigDto.ModelOption("chat", "deepseek-r1", "DeepSeek R1 (深度思考)", null),
         new SystemConfigDto.ModelOption("chat", "qwen3-235b-a22b-thinking-2507", "Qwen3 235B Thinking (深度思考)", null),
-        new SystemConfigDto.ModelOption("embedding", "text-embedding-v1", "text-embedding-v1", 1024),
         new SystemConfigDto.ModelOption("embedding", "text-embedding-v3", "text-embedding-v3", 1024),
         new SystemConfigDto.ModelOption("rerank", "qwen3-rerank", "qwen3-rerank", null),
         new SystemConfigDto.ModelOption("rerank", "gte-rerank", "gte-rerank", null)
@@ -152,14 +152,29 @@ public class ConfigController {
     @PostMapping("/rebuild-vector-index")
     public ResponseEntity<?> rebuildVectorIndex() {
         try {
-            RebuildService.RebuildResult result = rebuildService.rebuildVectorIndex();
-            return ResponseEntity.ok(Map.of(
-                "documentCount", result.documentCount(),
-                "chunkCount", result.chunkCount()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                .body(Map.of("error", "重建向量索引失败: " + e.getMessage()));
+            return ResponseEntity.ok(rebuildService.startRebuild());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @PostMapping("/rebuild-pg-index")
+    public ResponseEntity<?> rebuildPgIndex() {
+        try {
+            return ResponseEntity.ok(rebuildService.rebuildPgIndex());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "重建 PG 索引失败: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/rebuild-vector-index/status")
+    public RebuildService.RebuildStatus rebuildStatus() {
+        return rebuildService.getStatus();
     }
 
     private SystemConfigDto buildDto() {

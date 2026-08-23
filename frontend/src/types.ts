@@ -267,6 +267,15 @@ export interface ChunkPage {
   items: ChunkRecord[];
 }
 
+export interface RebuildStatus {
+  running: boolean;
+  processedDocuments: number;
+  totalDocuments: number;
+  chunkCount: number;
+  phase: string;
+  message: string | null;
+}
+
 export type EvaluationEvent =
   | { type: 'ingest_start'; missing: string[]; total: number }
   | { type: 'ingesting'; fileName: string }

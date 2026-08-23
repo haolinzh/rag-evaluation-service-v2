@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Form, Select, InputNumber, Switch, Button, Typography, Space, Card, Alert, message, Row, Col, Spin, Input, Radio, Popconfirm } from 'antd';
+import React, { useState, useEffect, useRef } from 'react';
+import { Form, Select, InputNumber, Switch, Button, Typography, Space, Card, Alert, message, Row, Col, Spin, Input, Radio, Popconfirm, Progress } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, SettingOutlined, KeyOutlined, DatabaseOutlined, ReloadOutlined } from '@ant-design/icons';
-import { fetchConfig, updateConfig, updateApiKey, rebuildVectorIndex } from '../api';
-import type { SystemConfig } from '../types';
+import { fetchConfig, updateConfig, updateApiKey, rebuildVectorIndex, fetchRebuildStatus, rebuildPgIndex } from '../api';
+import type { SystemConfig, RebuildStatus } from '../types';
 
 interface Props {
   onBack: () => void;
@@ -39,13 +39,23 @@ interface FormValues {
   ttlSeconds: number;
 }
 
+const rebuildPhaseLabel: Record<string, string> = {
+  IDLE: '空闲',
+  PREPARING: '解析+向量化',
+  WRITING: '双写入库',
+  INDEXING: '重建索引',
+  DONE: '完成',
+  FAILED: '失败',
+};
+
 const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
   const [form] = Form.useForm<FormValues>();
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [savingKey, setSavingKey] = useState(false);
-  const [rebuilding, setRebuilding] = useState(false);
+  const [rebuildStatus, setRebuildStatus] = useState<RebuildStatus | null>(null);
+  const [rebuildingPg, setRebuildingPg] = useState(false);
 
   const embeddingValue = Form.useWatch('embedding', form);
 
@@ -85,6 +95,33 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
       })
       .catch(() => message.error('配置加载失败'));
   }, [form]);
+
+  useEffect(() => {
+    fetchRebuildStatus().then(setRebuildStatus).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!rebuildStatus?.running) return;
+    const timer = setInterval(async () => {
+      try {
+        setRebuildStatus(await fetchRebuildStatus());
+      } catch { /* ignore */ }
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [rebuildStatus?.running]);
+
+  const prevRunning = useRef(false);
+  useEffect(() => {
+    const running = !!rebuildStatus?.running;
+    if (prevRunning.current && !running) {
+      if (rebuildStatus?.phase === 'DONE') {
+        message.success(`重建完成：${rebuildStatus.totalDocuments} 文档，${rebuildStatus.chunkCount} 分块`);
+      } else if (rebuildStatus?.phase === 'FAILED') {
+        message.error(rebuildStatus.message ?? '重建失败');
+      }
+    }
+    prevRunning.current = running;
+  }, [rebuildStatus]);
 
   const modelGroup = (g: string) =>
     (config?.modelOptions ?? []).filter((o) => o.group === g).map((o) => ({ label: o.label, value: o.id }));
@@ -171,14 +208,24 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
   };
 
   const onRebuild = async () => {
-    setRebuilding(true);
     try {
-      const r = await rebuildVectorIndex();
-      message.success(`向量索引已重建：${r.documentCount} 个文档，${r.chunkCount} 个分块`);
+      const s = await rebuildVectorIndex();
+      setRebuildStatus(s);
+      message.success('已开始重建，后台处理中');
     } catch (e: any) {
       message.error(e?.response?.data?.error ?? '重建失败');
+    }
+  };
+
+  const onRebuildPgIndex = async () => {
+    setRebuildingPg(true);
+    try {
+      const r = await rebuildPgIndex();
+      message.success(`PG 索引已重建（${r.indexType}${r.indexType === 'ivfflat' ? `，lists=${r.lists}` : ''}）`);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error ?? '重建 PG 索引失败');
     } finally {
-      setRebuilding(false);
+      setRebuildingPg(false);
     }
   };
 
@@ -319,20 +366,54 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
           size="small"
           style={{ marginBottom: 16 }}
           extra={
-            <Popconfirm
-              title="重建向量索引？"
-              description="将清空并按当前索引参数重新入库所有文档（双写 pgvector 与 Elasticsearch）。"
-              onConfirm={onRebuild}
-              okText="重建"
-              cancelText="取消"
-            >
-              <Button icon={<ReloadOutlined />} loading={rebuilding}>重建向量索引</Button>
-            </Popconfirm>
+            <Space>
+              <Popconfirm
+                title="重建 PG 索引？"
+                description="仅按当前索引参数 DROP+CREATE pgvector 索引，无需重新向量化（较快）。"
+                onConfirm={onRebuildPgIndex}
+                okText="重建"
+                cancelText="取消"
+              >
+                <Button icon={<ReloadOutlined />} loading={rebuildingPg} disabled={!!rebuildStatus?.running}>重建 PG 索引</Button>
+              </Popconfirm>
+              <Popconfirm
+                title="重建向量索引？"
+                description="将清空并按当前索引参数重新入库所有文档（双写 pgvector 与 Elasticsearch）。"
+                onConfirm={onRebuild}
+                okText="重建"
+                cancelText="取消"
+              >
+                <Button icon={<ReloadOutlined />} loading={!!rebuildStatus?.running}>重建向量索引</Button>
+              </Popconfirm>
+            </Space>
           }
         >
           <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-            双写 pgvector 与 Elasticsearch。「当前向量后端」决定实际用于语义检索的后端，保存后立即切换（双写，无需重新入库）；下方两个参数区分别配置各自后端。索引类型 / lists 等建索引参数改动后需点击「重建向量索引」。
+            双写 pgvector 与 Elasticsearch。「当前向量后端」决定实际用于语义检索的后端，保存后立即切换（双写，无需重新入库）；下方两个参数区分别配置各自后端。索引类型 / lists 等建索引参数改动后点击「重建 PG 索引」即可（仅重建 pgvector 索引，无需重新向量化）；embedding 维度变化等才需点击「重建向量索引」全量重新入库。
           </Typography.Text>
+          {rebuildStatus?.running && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message={`正在重建向量索引（${rebuildPhaseLabel[rebuildStatus.phase] ?? rebuildStatus.phase}）`}
+              description={
+                <div>
+                  <Progress
+                    percent={rebuildStatus.totalDocuments > 0
+                      ? Math.round((rebuildStatus.processedDocuments / rebuildStatus.totalDocuments) * 100)
+                      : 0}
+                    size="small"
+                  />
+                  <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 4 }}>
+                    已处理 {rebuildStatus.processedDocuments}/{rebuildStatus.totalDocuments} 文档
+                    {rebuildStatus.chunkCount > 0 ? `，${rebuildStatus.chunkCount} 分块` : ''}
+                    {rebuildStatus.message ? `，当前：${rebuildStatus.message}` : ''}
+                  </div>
+                </div>
+              }
+            />
+          )}
           <Form.Item
             label="当前向量后端（实际检索用）"
             name="vectorBackend"

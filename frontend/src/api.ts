@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta, OpsStatus, ChunkPage } from './types';
+import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta, OpsStatus, ChunkPage, RebuildStatus } from './types';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -179,8 +179,18 @@ export async function updateApiKey(apiKey: string): Promise<SystemConfig> {
   return data;
 }
 
-export async function rebuildVectorIndex(): Promise<{ documentCount: number; chunkCount: number }> {
+export async function rebuildVectorIndex(): Promise<RebuildStatus> {
   const { data } = await api.post('/config/rebuild-vector-index');
+  return data;
+}
+
+export async function rebuildPgIndex(): Promise<{ indexType: string; lists: number }> {
+  const { data } = await api.post('/config/rebuild-pg-index');
+  return data;
+}
+
+export async function fetchRebuildStatus(): Promise<RebuildStatus> {
+  const { data } = await api.get('/config/rebuild-vector-index/status');
   return data;
 }
 
