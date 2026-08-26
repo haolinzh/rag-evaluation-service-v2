@@ -38,6 +38,7 @@ const sourceColor: Record<string, string> = {
   semantic: 'purple',
   rrf: 'cyan',
   rerank: 'gold',
+  web: 'blue',
 };
 
 const parseChunks = (json?: string | null): ChunkRow[] => {
@@ -64,6 +65,13 @@ const renderChunks = (json?: string | null) => {
             {c.chapter && <span style={{ color: '#999' }}>{c.chapter}{c.section ? ' · ' + c.section : ''}</span>}
             <span style={{ color: '#1677ff' }}>score {typeof c.score === 'number' ? c.score.toFixed(4) : c.score}</span>
           </div>
+          {c.source === 'web' && c.chunkId && /^https?:\/\//i.test(c.chunkId) && (
+            <div style={{ marginTop: 2 }}>
+              <a href={c.chunkId} target="_blank" rel="noopener noreferrer" style={{ color: '#1677ff', fontSize: 12, wordBreak: 'break-all' }}>
+                {c.chunkId}
+              </a>
+            </div>
+          )}
           {c.sourceDetails && Object.keys(c.sourceDetails).length > 0 && (
             <div style={{ color: '#999', marginTop: 2 }}>
               {Object.entries(c.sourceDetails).map(([k, v]) => (
@@ -170,6 +178,8 @@ const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
               <Descriptions.Item label="重排延迟">{r.rerankLatencyMs}ms</Descriptions.Item>
               <Descriptions.Item label="缓存查询延迟">{r.cacheLookupLatencyMs}ms</Descriptions.Item>
               <Descriptions.Item label="缓存命中">{r.cacheHit ? '是' : '否'}</Descriptions.Item>
+              <Descriptions.Item label="联网搜索">{r.webSearchUsed ? '是' : '否'}</Descriptions.Item>
+              <Descriptions.Item label="联网耗时">{r.webSearchUsed ? `${r.webSearchLatencyMs}ms` : '—'}</Descriptions.Item>
               <Descriptions.Item label="拒答">{r.refusal ? `是（${r.refusalReason ?? ''}）` : '否'}</Descriptions.Item>
               <Descriptions.Item label="Token（提示/补全）">
                 {r.promptTokens} / {r.completionTokens}

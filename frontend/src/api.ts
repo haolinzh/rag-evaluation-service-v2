@@ -118,8 +118,8 @@ export async function getDocumentChunks(id: number): Promise<ChunkPreview[]> {
   return data;
 }
 
-export async function askQuestion(question: string, sessionId: string, mode: string): Promise<ChatResponse> {
-  const { data } = await api.post('/chat', { question, sessionId, mode });
+export async function askQuestion(question: string, sessionId: string, mode: string, webSearch: string): Promise<ChatResponse> {
+  const { data } = await api.post('/chat', { question, sessionId, mode, webSearch });
   return data;
 }
 
@@ -138,12 +138,13 @@ export async function streamAsk(
   question: string,
   sessionId: string,
   mode: string,
+  webSearch: string,
   onEvent: (evt: StreamEvent) => void
 ): Promise<void> {
   const resp = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ question, sessionId, mode }),
+    body: JSON.stringify({ question, sessionId, mode, webSearch }),
   });
 
   if (!resp.ok || !resp.body) {
@@ -242,6 +243,16 @@ export async function updateRetrievalMode(mode: string): Promise<SystemConfig> {
 
 export async function updateApiKey(apiKey: string): Promise<SystemConfig> {
   const { data } = await api.put('/config/apikey', { apiKey });
+  return data;
+}
+
+export async function updateWebSearchEnabled(enabled: boolean): Promise<SystemConfig> {
+  const { data } = await api.put('/config/websearch/enabled', { enabled });
+  return data;
+}
+
+export async function updateWebApiKey(apiKey: string): Promise<SystemConfig> {
+  const { data } = await api.put('/config/websearch/apikey', { apiKey });
   return data;
 }
 

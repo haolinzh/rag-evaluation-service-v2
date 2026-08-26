@@ -53,6 +53,7 @@ public class ChatService {
     private final AuthorizationService authorizationService;
     private final AuthService authService;
     private final ConfigService configService;
+    private final WebSearchService webSearchService;
 
     public ChatService(DashScopeService dashScope,
                        RetrievalService retrievalService,
@@ -66,7 +67,8 @@ public class ChatService {
                        ObjectMapper objectMapper,
                        AuthorizationService authorizationService,
                        AuthService authService,
-                       ConfigService configService) {
+                       ConfigService configService,
+                       WebSearchService webSearchService) {
         this.dashScope = dashScope;
         this.retrievalService = retrievalService;
         this.safetyService = safetyService;
@@ -80,14 +82,17 @@ public class ChatService {
         this.authorizationService = authorizationService;
         this.authService = authService;
         this.configService = configService;
+        this.webSearchService = webSearchService;
     }
 
-    public ChatResponse ask(String question, String sessionId, String mode, AuthenticatedUser viewer) {
+    public ChatResponse ask(String question, String sessionId, String mode, String webSearch, AuthenticatedUser viewer) {
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = UUID.randomUUID().toString();
         }
 
         String effectiveMode = retrievalService.resolveMode(mode);
+        String webMode = normalizeWebSearch(webSearch);
+        boolean cacheable = "off".equals(webMode);
         String cacheScope = cacheScope(viewer);
 
         OpsMetrics metrics = metricsCollector.startRequest(sessionId, effectiveMode);
@@ -106,7 +111,8 @@ public class ChatService {
             // 1. Check semantic cache
             String normalized = normalizeQuery(question);
             Instant cacheStart = Instant.now();
-            String cached = cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope);
+            String cached = cacheable
+                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope) : null;
             boolean cacheHit = cached != null;
             long cacheLookupLatencyMs = Duration.between(cacheStart, Instant.now()).toMillis();
             metrics.setCacheLookupLatencyMs(cacheLookupLatencyMs);
@@ -134,6 +140,16 @@ public class ChatService {
             Instant retrievalStart = Instant.now();
             RetrievalService.RetrievalResult rr = retrievalService.retrieve(question, effectiveMode);
             List<SearchResult> chunks = filterVisible(rr.results(), viewer);
+            if (shouldWebSearch(webMode, chunks, viewer)) {
+                metrics.setWebSearchUsed(true);
+                Instant webStart = Instant.now();
+                List<SearchResult> web = webSearchService.search(question);
+                metrics.setWebSearchLatencyMs(Duration.between(webStart, Instant.now()).toMillis());
+                if (!web.isEmpty()) {
+                    chunks = new ArrayList<>(chunks);
+                    chunks.addAll(web);
+                }
+            }
             hitDocuments = chunks.stream().map(SearchResult::getFileName).distinct()
                 .collect(Collectors.joining(", "));
             metrics.setRetrievalLatencyMs(Duration.between(retrievalStart, Instant.now()).toMillis());
@@ -230,7 +246,8 @@ public class ChatService {
                 .map(c -> {
                     String redacted = piiService.redact(c.getContent());
                     String snippet = redacted.length() > 200 ? redacted.substring(0, 200) : redacted;
-                    return new Source(c.getFileName(), snippet, redacted, c.getScore(), c.getSource());
+                    return new Source(c.getFileName(), snippet, redacted, c.getScore(), c.getSource(),
+                        "web".equals(c.getSource()) ? c.getChunkId() : null);
                 })
                 .collect(Collectors.toMap(Source::getFileName, s -> s, (a, b) -> a, LinkedHashMap::new))
                 .values().stream().toList();
@@ -238,7 +255,9 @@ public class ChatService {
             ChatResponse response = new ChatResponse(answerText, gen.thinking(), effectiveMode, sources, false, null);
 
             // 9. Cache (store full response so cache hits still return sources)
-            cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope);
+            if (cacheable) {
+                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope);
+            }
 
             // 10. Save history
             persistTurn(sessionId, question, answerText, gen.thinking(), effectiveMode, sources, false, viewer);
@@ -285,12 +304,14 @@ public class ChatService {
         }
     }
 
-    public void streamAsk(String question, String sessionId, String mode, SseEmitter emitter, AuthenticatedUser viewer) {
+    public void streamAsk(String question, String sessionId, String mode, String webSearch, SseEmitter emitter, AuthenticatedUser viewer) {
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = UUID.randomUUID().toString();
         }
 
         String effectiveMode = retrievalService.resolveMode(mode);
+        String webMode = normalizeWebSearch(webSearch);
+        boolean cacheable = "off".equals(webMode);
         String cacheScope = cacheScope(viewer);
 
         OpsMetrics metrics = metricsCollector.startRequest(sessionId, effectiveMode);
@@ -309,7 +330,8 @@ public class ChatService {
             // 1. Semantic cache
             String normalized = normalizeQuery(question);
             Instant cacheStart = Instant.now();
-            String cached = cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope);
+            String cached = cacheable
+                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope) : null;
             boolean cacheHit = cached != null;
             long cacheLookupLatencyMs = Duration.between(cacheStart, Instant.now()).toMillis();
             metrics.setCacheLookupLatencyMs(cacheLookupLatencyMs);
@@ -340,6 +362,16 @@ public class ChatService {
             Instant retrievalStart = Instant.now();
             RetrievalService.RetrievalResult rr = retrievalService.retrieve(question, effectiveMode);
             List<SearchResult> chunks = filterVisible(rr.results(), viewer);
+            if (shouldWebSearch(webMode, chunks, viewer)) {
+                metrics.setWebSearchUsed(true);
+                Instant webStart = Instant.now();
+                List<SearchResult> web = webSearchService.search(question);
+                metrics.setWebSearchLatencyMs(Duration.between(webStart, Instant.now()).toMillis());
+                if (!web.isEmpty()) {
+                    chunks = new ArrayList<>(chunks);
+                    chunks.addAll(web);
+                }
+            }
             hitDocuments = chunks.stream().map(SearchResult::getFileName).distinct()
                 .collect(Collectors.joining(", "));
             metrics.setRetrievalLatencyMs(Duration.between(retrievalStart, Instant.now()).toMillis());
@@ -449,7 +481,8 @@ public class ChatService {
                 .map(c -> {
                     String r = piiService.redact(c.getContent());
                     String snippet = r.length() > 200 ? r.substring(0, 200) : r;
-                    return new Source(c.getFileName(), snippet, r, c.getScore(), c.getSource());
+                    return new Source(c.getFileName(), snippet, r, c.getScore(), c.getSource(),
+                        "web".equals(c.getSource()) ? c.getChunkId() : null);
                 })
                 .collect(Collectors.toMap(Source::getFileName, s -> s, (a, b) -> a, LinkedHashMap::new))
                 .values().stream().toList();
@@ -457,7 +490,9 @@ public class ChatService {
             ChatResponse response = new ChatResponse(redacted, thinkingText, effectiveMode, sources, false, null);
 
             // 9. Cache (store full response so cache hits still return sources + thinking)
-            cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope);
+            if (cacheable) {
+                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope);
+            }
 
             // 10. Save history
             persistTurn(sessionId, question, redacted, thinkingText, effectiveMode, sources, false, viewer);
@@ -539,6 +574,25 @@ public class ChatService {
 
     private String normalizeQuery(String query) {
         return query.toLowerCase().strip().replaceAll("\\s+", " ");
+    }
+
+    private String normalizeWebSearch(String webSearch) {
+        if (webSearch == null || webSearch.isBlank()) return "auto";
+        String v = webSearch.trim().toLowerCase();
+        return ("on".equals(v) || "off".equals(v)) ? v : "auto";
+    }
+
+    private boolean shouldWebSearch(String webMode, List<SearchResult> chunks, AuthenticatedUser viewer) {
+        if (!configService.getBool("web.search.enabled", false)) return false;
+        if ("off".equals(webMode)) return false;
+        if (viewer == null || viewer.permissions() == null || !viewer.permissions().contains("chat:web")) {
+            return false;
+        }
+        if ("on".equals(webMode)) return true;
+        double maxScore = chunks.stream().mapToDouble(SearchResult::getConfidenceScore).max().orElse(0.0);
+        // 默认 0.55，与 safety.out-of-scope-threshold 对齐：内部置信度低于该值会被
+        // SafetyService 拒答，此时才联网补救，避免 [0.4, 0.55) 区间既不联网又被拒答。
+        return maxScore < configService.getDouble("web.fallback-threshold", 0.55);
     }
 
     private String cacheScope(AuthenticatedUser viewer) {
@@ -714,6 +768,8 @@ public class ChatService {
         log.setVectorLatencyMs(m.getVectorLatencyMs());
         log.setRerankLatencyMs(m.getRerankLatencyMs());
         log.setCacheLookupLatencyMs(m.getCacheLookupLatencyMs());
+        log.setWebSearchUsed(m.isWebSearchUsed());
+        log.setWebSearchLatencyMs(m.getWebSearchLatencyMs());
         log.setStatus(status);
         requestLogRepo.save(log);
     }

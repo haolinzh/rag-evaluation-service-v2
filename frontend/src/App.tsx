@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, theme, Grid, Button, Drawer, Space } from 'antd';
-import { FileTextOutlined, BarChartOutlined, SettingOutlined, ExperimentOutlined, DashboardOutlined, TeamOutlined, SafetyCertificateOutlined, LogoutOutlined, LoginOutlined, UserOutlined, ControlOutlined } from '@ant-design/icons';
+import { Layout, theme, Grid, Button, Drawer, Space, Switch, message } from 'antd';
+import { FileTextOutlined, BarChartOutlined, SettingOutlined, ExperimentOutlined, DashboardOutlined, TeamOutlined, SafetyCertificateOutlined, LogoutOutlined, LoginOutlined, UserOutlined, ControlOutlined, GlobalOutlined } from '@ant-design/icons';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import DocumentPanel from './components/DocumentPanel';
 import ChatPanel from './components/ChatPanel';
@@ -15,7 +15,7 @@ import LoginModal from './components/LoginModal';
 import UserManagement from './components/UserManagement';
 import RoleManagement from './components/RoleManagement';
 import type { DocumentMeta, AuthUser } from './types';
-import { listDocuments, fetchConfig, updateRetrievalMode, getToken, getCachedUser, setAuth, fetchMe, logout, fetchGuestPermissions } from './api';
+import { listDocuments, fetchConfig, updateRetrievalMode, updateWebSearchEnabled, getToken, getCachedUser, setAuth, fetchMe, logout, fetchGuestPermissions } from './api';
 
 const { Header, Content } = Layout;
 
@@ -24,6 +24,7 @@ type View = 'main' | 'documents' | 'logs' | 'config' | 'eval' | 'ops' | 'users' 
 const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [retrievalMode, setRetrievalMode] = useState<string>('hybrid');
+  const [webEnabled, setWebEnabled] = useState(false);
   const [view, setView] = useState<View>('main');
   const [docsOpen, setDocsOpen] = useState(false);
   const [metricsOpen, setMetricsOpen] = useState(false);
@@ -78,7 +79,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!has('config:view')) return;
     fetchConfig()
-      .then((c) => setRetrievalMode(c.retrieval.mode))
+      .then((c) => { setRetrievalMode(c.retrieval.mode); setWebEnabled(c.webSearch.enabled); })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -99,6 +100,12 @@ const App: React.FC = () => {
     setView('main');
   };
 
+  const handleWebToggle = (checked: boolean) => {
+    setWebEnabled(checked);
+    updateWebSearchEnabled(checked)
+      .catch(() => { setWebEnabled(!checked); message.error('联网开关更新失败'); });
+  };
+
   if (!authReady) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
@@ -109,7 +116,7 @@ const App: React.FC = () => {
 
   if (view === 'documents') return <DocumentManagement onBack={() => setView('main')} />;
   if (view === 'logs') return <LogManagement onBack={() => setView('main')} canClear={has('log:clear')} />;
-  if (view === 'config') return <ConfigPage onBack={() => setView('main')} onSaved={setRetrievalMode} canEdit={has('config:edit')} />;
+  if (view === 'config') return <ConfigPage onBack={() => setView('main')} onSaved={(mode, web) => { setRetrievalMode(mode); setWebEnabled(web); }} canEdit={has('config:edit')} />;
   if (view === 'eval') return <EvaluationPage onBack={() => setView('main')} />;
   if (view === 'ops') return <OpsPage onBack={() => setView('main')} />;
   if (view === 'users') return <UserManagement onBack={() => setView('main')} />;
@@ -126,7 +133,7 @@ const App: React.FC = () => {
       onRequireLogin={() => setLoginOpen(true)}
     />
   );
-  const chatPanel = <ChatPanel retrievalMode={retrievalMode} isGuest={!user} />;
+  const chatPanel = <ChatPanel retrievalMode={retrievalMode} isGuest={!user} canWebSearch={webEnabled && has('chat:web')} />;
   const canViewLogs = !!user;
   const hasMetrics = has('report:view') || canViewLogs;
   const metricsPanel = hasMetrics ? (
@@ -193,6 +200,13 @@ const App: React.FC = () => {
           <Button type="text" icon={<ControlOutlined />} onClick={() => setAdminLoginOpen(true)} style={{ color: '#fff' }}>
             管理
           </Button>
+        )}
+        {has('config:edit') && (
+          <Space size={6} style={{ color: '#fff', fontSize: 14 }}>
+            <GlobalOutlined />
+            <span style={{ opacity: 0.9 }}>联网</span>
+            <Switch size="small" checked={webEnabled} onChange={handleWebToggle} />
+          </Space>
         )}
         {user ? (
           <Space size={8} style={{ color: '#fff', fontSize: 14 }}>

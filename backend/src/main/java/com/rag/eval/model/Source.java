@@ -13,4 +13,5 @@ public class Source {
     private String content;
     private double score;
     private String sourceType;
+    private String url;
 }

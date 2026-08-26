@@ -34,6 +34,7 @@ public class DataInitializer {
                 seedRoles(roleRepo, permissionRepo);
             }
             ensureGuestRole(roleRepo, permissionRepo);
+            ensureWebSearchPermission(roleRepo, permissionRepo);
             if (userRepo.count() == 0) {
                 seedAdmin(userRepo, roleRepo, passwordEncoder);
             }
@@ -84,6 +85,7 @@ public class DataInitializer {
             p("document:manage:all", "管理任意文档", "文档"),
             p("chat:read:own", "读自己的会话", "聊天"),
             p("chat:delete:own", "删自己的会话", "聊天"),
+            p("chat:web", "使用联网搜索", "聊天"),
             p("evaluation:use", "使用评测功能", "评测"),
             p("user:manage", "用户管理", "系统"),
             p("role:manage", "角色管理", "系统"),
@@ -105,13 +107,13 @@ public class DataInitializer {
         roleRepo.save(role("ADMIN", "管理员", "拥有全部权限", true, permissionRepo,
             "document:read:public", "document:read:department", "document:read:executive",
             "document:read:private", "document:read:any", "document:manage:own", "document:manage:all",
-            "chat:read:own", "chat:delete:own", "evaluation:use", "user:manage", "role:manage",
+            "chat:read:own", "chat:delete:own", "chat:web", "evaluation:use", "user:manage", "role:manage",
             "config:view", "config:edit", "ops:view", "log:view", "log:clear", "cache:clear", "report:view"));
 
         roleRepo.save(role("EXECUTIVE", "高管", "跨部门全局可见，含作者私有", true, permissionRepo,
             "document:read:public", "document:read:department", "document:read:executive",
             "document:read:private", "document:read:any", "document:manage:own",
-            "chat:read:own", "chat:delete:own", "evaluation:use", "report:view"));
+            "chat:read:own", "chat:delete:own", "chat:web", "evaluation:use", "report:view"));
 
         roleRepo.save(role("USER", "普通员工", "默认员工权限", true, permissionRepo,
             "document:read:public", "document:read:department", "document:read:private",
@@ -134,6 +136,21 @@ public class DataInitializer {
             for (String c : codes) permissionRepo.findById(c).ifPresent(perms::add);
             guest.setPermissions(perms);
             roleRepo.save(guest);
+        }
+    }
+
+    private void ensureWebSearchPermission(RoleRepo roleRepo, PermissionRepo permissionRepo) {
+        Permission web = permissionRepo.findById("chat:web").orElseGet(() ->
+            permissionRepo.save(new Permission("chat:web", "使用联网搜索", "聊天")));
+        for (String code : List.of("ADMIN", "EXECUTIVE")) {
+            Role role = roleRepo.findByCode(code).orElse(null);
+            if (role == null) continue;
+            boolean has = role.getPermissions().stream().anyMatch(p -> "chat:web".equals(p.getCode()));
+            if (has) continue;
+            Set<Permission> perms = new LinkedHashSet<>(role.getPermissions());
+            perms.add(web);
+            role.setPermissions(perms);
+            roleRepo.save(role);
         }
     }
 

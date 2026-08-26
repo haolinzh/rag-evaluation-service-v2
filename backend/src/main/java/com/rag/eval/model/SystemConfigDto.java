@@ -12,7 +12,9 @@ public record SystemConfigDto(
     Vector vector,
     List<ModelOption> modelOptions,
     int embeddingDimension,
-    String apiKeyMasked
+    String apiKeyMasked,
+    WebSearch webSearch,
+    String webApiKeyMasked
 ) {
     public record Retrieval(String mode, int topK, int recallSizeMultiplier, int rrfK,
                             int rerankCandidates, double similarityThreshold) {}
@@ -33,6 +35,8 @@ public record SystemConfigDto(
     public record Pgvector(String indexType, int lists, int probes, int efSearch) {}
 
     public record Elasticsearch(int numCandidates) {}
+
+    public record WebSearch(boolean enabled, String provider, int maxResults) {}
 
     public record ModelOption(String group, String id, String label, Integer dimensions) {}
 }

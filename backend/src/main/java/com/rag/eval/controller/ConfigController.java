@@ -45,6 +45,10 @@ public class ConfigController {
     private static final String K_PG_PROBES = "vector.pgvector.probes";
     private static final String K_PG_EF_SEARCH = "vector.pgvector.ef-search";
     private static final String K_ES_NUM_CANDIDATES = "vector.elasticsearch.num-candidates";
+    private static final String K_WEB_ENABLED = "web.search.enabled";
+    private static final String K_WEB_PROVIDER = "web.search.provider";
+    private static final String K_WEB_MAX_RESULTS = "web.search.max-results";
+    private static final String K_WEB_API_KEY = "web.search.api-key";
 
     private static final int EMBEDDING_DIMENSION = 1024;
 
@@ -64,6 +68,7 @@ public class ConfigController {
     private static final Set<String> MODES = Set.of("vector", "hybrid", "hybrid-rerank");
     private static final Set<String> VECTOR_BACKENDS = Set.of("pgvector", "elasticsearch");
     private static final Set<String> PG_INDEX_TYPES = Set.of("ivfflat", "hnsw");
+    private static final Set<String> WEB_PROVIDERS = Set.of("bocha");
 
     private final ConfigService config;
     private final RebuildService rebuildService;
@@ -128,6 +133,11 @@ public class ConfigController {
             changes.put(K_JUDGE_MODEL, dto.judge().model());
             changes.put(K_JUDGE_TEMPERATURE, String.valueOf(dto.judge().temperature()));
         }
+        if (dto.webSearch() != null) {
+            changes.put(K_WEB_ENABLED, String.valueOf(dto.webSearch().enabled()));
+            changes.put(K_WEB_PROVIDER, dto.webSearch().provider());
+            changes.put(K_WEB_MAX_RESULTS, String.valueOf(dto.webSearch().maxResults()));
+        }
 
         config.putAll(changes);
         return ResponseEntity.ok(buildDto());
@@ -152,6 +162,26 @@ public class ConfigController {
             config.reset(K_API_KEY);
         } else {
             config.put(K_API_KEY, apiKey.trim());
+        }
+        return ResponseEntity.ok(buildDto());
+    }
+
+    @PreAuthorize("hasAuthority('config:edit')")
+    @PutMapping("/websearch/enabled")
+    public ResponseEntity<?> updateWebSearchEnabled(@RequestBody(required = false) Map<String, Object> body) {
+        boolean enabled = body != null && Boolean.TRUE.equals(body.get("enabled"));
+        config.put(K_WEB_ENABLED, String.valueOf(enabled));
+        return ResponseEntity.ok(buildDto());
+    }
+
+    @PreAuthorize("hasAuthority('config:edit')")
+    @PutMapping("/websearch/apikey")
+    public ResponseEntity<?> updateWebApiKey(@RequestBody(required = false) Map<String, String> body) {
+        String apiKey = body == null ? null : body.get("apiKey");
+        if (apiKey == null || apiKey.isBlank()) {
+            config.reset(K_WEB_API_KEY);
+        } else {
+            config.put(K_WEB_API_KEY, apiKey.trim());
         }
         return ResponseEntity.ok(buildDto());
     }
@@ -227,7 +257,12 @@ public class ConfigController {
                     config.getInt(K_ES_NUM_CANDIDATES, 100))),
             MODEL_OPTIONS,
             EMBEDDING_DIMENSION,
-            maskApiKey(config.get(K_API_KEY, "")));
+            maskApiKey(config.get(K_API_KEY, "")),
+            new SystemConfigDto.WebSearch(
+                config.getBool(K_WEB_ENABLED, false),
+                config.get(K_WEB_PROVIDER, "bocha"),
+                config.getInt(K_WEB_MAX_RESULTS, 5)),
+            maskApiKey(config.get(K_WEB_API_KEY, "")));
     }
 
     private String maskApiKey(String key) {
@@ -278,6 +313,12 @@ public class ConfigController {
         if (!isAllowedModel("embedding", dto.models().embedding())) return "不支持的向量模型: " + dto.models().embedding();
         if (!isAllowedModel("rerank", dto.models().rerank())) return "不支持的重排模型: " + dto.models().rerank();
         if (!isAllowedModel("chat", dto.judge().model())) return "不支持的评测模型: " + dto.judge().model();
+        if (dto.webSearch() != null) {
+            if (!WEB_PROVIDERS.contains(dto.webSearch().provider())) {
+                return "非法联网搜索引擎: " + dto.webSearch().provider();
+            }
+            if (dto.webSearch().maxResults() <= 0) return "联网搜索结果数必须为正数";
+        }
         return null;
     }
 

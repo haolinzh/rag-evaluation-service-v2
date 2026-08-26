@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Form, Select, InputNumber, Switch, Button, Typography, Space, Card, Alert, message, Row, Col, Spin, Input, Radio, Popconfirm, Progress } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, SettingOutlined, KeyOutlined, DatabaseOutlined, ReloadOutlined } from '@ant-design/icons';
-import { fetchConfig, updateConfig, updateApiKey, rebuildVectorIndex, fetchRebuildStatus, rebuildPgIndex } from '../api';
+import { ArrowLeftOutlined, SaveOutlined, SettingOutlined, KeyOutlined, DatabaseOutlined, ReloadOutlined, GlobalOutlined } from '@ant-design/icons';
+import { fetchConfig, updateConfig, updateApiKey, updateWebApiKey, rebuildVectorIndex, fetchRebuildStatus, rebuildPgIndex } from '../api';
 import type { SystemConfig, RebuildStatus } from '../types';
 
 interface Props {
   onBack: () => void;
-  onSaved: (mode: string) => void;
+  onSaved: (mode: string, webEnabled: boolean) => void;
   canEdit: boolean;
 }
 
@@ -39,6 +39,9 @@ interface FormValues {
   forbiddenKeywords: string[];
   enabled: boolean;
   ttlSeconds: number;
+  webEnabled: boolean;
+  webProvider: string;
+  webMaxResults: number;
 }
 
 const rebuildPhaseLabel: Record<string, string> = {
@@ -56,6 +59,8 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
   const [saving, setSaving] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [savingKey, setSavingKey] = useState(false);
+  const [webApiKeyInput, setWebApiKeyInput] = useState('');
+  const [savingWebKey, setSavingWebKey] = useState(false);
   const [rebuildStatus, setRebuildStatus] = useState<RebuildStatus | null>(null);
   const [rebuildingPg, setRebuildingPg] = useState(false);
 
@@ -94,6 +99,9 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
           forbiddenKeywords: c.safety.forbiddenKeywords.split(',').map((s) => s.trim()).filter(Boolean),
           enabled: c.cache.enabled,
           ttlSeconds: c.cache.ttlSeconds,
+          webEnabled: c.webSearch.enabled,
+          webProvider: c.webSearch.provider,
+          webMaxResults: c.webSearch.maxResults,
         });
       })
       .catch(() => message.error('配置加载失败'));
@@ -162,13 +170,14 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
         forbiddenKeywords: v.forbiddenKeywords.join(','),
       },
       cache: { enabled: v.enabled, ttlSeconds: v.ttlSeconds },
+      webSearch: { enabled: v.webEnabled, provider: v.webProvider, maxResults: v.webMaxResults },
       modelOptions: config.modelOptions,
       embeddingDimension: config.embeddingDimension,
     };
     setSaving(true);
     try {
       await updateConfig(next);
-      onSaved(v.mode);
+      onSaved(v.mode, v.webEnabled);
       message.success('配置已保存，即时生效');
     } catch (e: any) {
       message.error(e?.response?.data?.error ?? '保存失败');
@@ -207,6 +216,39 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
       message.error(e?.response?.data?.error ?? '清除失败');
     } finally {
       setSavingKey(false);
+    }
+  };
+
+  const saveWebApiKey = async () => {
+    const k = webApiKeyInput.trim();
+    if (!k) {
+      message.warning('请输入 Bocha API Key');
+      return;
+    }
+    setSavingWebKey(true);
+    try {
+      const c = await updateWebApiKey(k);
+      setConfig(c);
+      setWebApiKeyInput('');
+      message.success('Bocha API Key 已保存，即时生效');
+    } catch (e: any) {
+      message.error(e?.response?.data?.error ?? '保存失败');
+    } finally {
+      setSavingWebKey(false);
+    }
+  };
+
+  const clearWebApiKey = async () => {
+    setSavingWebKey(true);
+    try {
+      const c = await updateWebApiKey('');
+      setConfig(c);
+      setWebApiKeyInput('');
+      message.success('已清除 Bocha API Key');
+    } catch (e: any) {
+      message.error(e?.response?.data?.error ?? '清除失败');
+    } finally {
+      setSavingWebKey(false);
     }
   };
 
@@ -270,6 +312,51 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
               {config.apiKeyMasked
                 ? `当前已配置：${config.apiKeyMasked}`
                 : '当前未配置（可在上方填写，或通过环境变量 DASHSCOPE_API_KEY 注入）'}
+            </Typography.Text>
+          </div>
+        </Card>
+
+        <Card title={<span><GlobalOutlined /> 联网搜索</span>} size="small" style={{ marginBottom: 16 }}>
+          <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+            知识库检索置信度不足时自动联网补充（需用户具备 chat:web 权限）。默认关闭，开启后请选择搜索引擎并配置对应 Key。
+          </Typography.Text>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item label="启用联网搜索" name="webEnabled" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="搜索引擎" name="webProvider" rules={[{ required: true }]}>
+                <Select options={[{ label: 'Bocha（博查）', value: 'bocha' }]} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="单次搜索结果数" name="webMaxResults" rules={[{ required: true }]}>
+                <InputNumber min={1} max={20} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>Bocha API Key</Typography.Text>
+          {canEdit ? (
+            <Space.Compact style={{ width: '100%' }}>
+              <Input.Password
+                placeholder="Bocha Web Search API Key"
+                value={webApiKeyInput}
+                onChange={(e) => setWebApiKeyInput(e.target.value)}
+                style={{ maxWidth: 420 }}
+              />
+              <Button type="primary" onClick={saveWebApiKey} loading={savingWebKey}>保存 Key</Button>
+              <Button onClick={clearWebApiKey} disabled={!config.webApiKeyMasked}>清除</Button>
+            </Space.Compact>
+          ) : (
+            <Typography.Text type="secondary">仅管理员可配置</Typography.Text>
+          )}
+          <div style={{ marginTop: 8 }}>
+            <Typography.Text type="secondary">
+              {config.webApiKeyMasked
+                ? `当前已配置：${config.webApiKeyMasked}`
+                : '当前未配置（Bocha 引擎需填写后方可联网）'}
             </Typography.Text>
           </div>
         </Card>

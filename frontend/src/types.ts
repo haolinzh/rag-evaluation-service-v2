@@ -93,6 +93,7 @@ export interface Source {
   content?: string;
   score: number;
   sourceType: string;
+  url?: string | null;
 }
 
 export interface ChatResponse {
@@ -163,6 +164,8 @@ export interface RequestLog {
   vectorLatencyMs: number;
   rerankLatencyMs: number;
   cacheLookupLatencyMs: number;
+  webSearchUsed: boolean;
+  webSearchLatencyMs: number;
   status: string;
 }
 
@@ -200,6 +203,12 @@ export interface SystemConfig {
   modelOptions: ModelOption[];
   embeddingDimension: number;
   apiKeyMasked?: string | null;
+  webSearch: {
+    enabled: boolean;
+    provider: string;
+    maxResults: number;
+  };
+  webApiKeyMasked?: string | null;
 }
 
 export interface EvaluationQuestion {

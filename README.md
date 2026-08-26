@@ -80,6 +80,7 @@
 | **文档四档可见性** | 文档归属作者（部门），可见性分 `PUBLIC` / `DEPARTMENT` / `EXECUTIVE` / `PRIVATE` 四档；高管经 `document:read:any` 全局穿透（含作者私有），管理员可管理任意文档 |
 | **请求日志归属** | 每次问答记录请求人 `ownerId` / `ownerUsername`；登录用户默认仅见自己的日志，`log:view` 权限者可见全部 |
 | **系统提示词配置** | 「系统配置」页可编辑发送给大模型的系统提示词，空值回退默认；检索到的文档内容自动拼接在提示词末尾 |
+| **联网搜索（WebRAG）** | 知识库内检索置信度不足时自动联网补充（Bocha 引擎），主页全局开关 + 用户 `chat:web` 权限 + 前端「自动/联网/仅知识库」三档切换；联网来源含可点击 url |
 
 ---
 
@@ -272,6 +273,17 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
 
 **API Key 初始化优先级**（`dashscope.api-key`）：`system_config` 表（UI 配置） > 环境变量 `DASHSCOPE_API_KEY` > 无。可通过 `PUT /api/config/apikey` 写入（`{"apiKey":"sk-..."}`）或传空值清除（回退环境变量）；`GET /api/config` 仅返回脱敏尾号 `apiKeyMasked`，不回显完整 Key，避免泄露。
 
+**联网搜索（WebRAG）**：知识库内检索置信度低于 `web.fallback-threshold`（默认 0.55，与越界阈值对齐）时自动联网补充。搜索引擎为博查 Bocha，配置键：
+
+| 配置键 | 默认 | 说明 |
+|---|---|---|
+| `web.search.enabled` | `false` | 全局联网总开关（主页 Header 或配置页切换） |
+| `web.search.provider` | `bocha` | 搜索引擎（当前仅 `bocha`） |
+| `web.search.max-results` | `5` | 单次搜索结果数 |
+| `web.search.api-key` | — | Bocha API Key（配置页填写，脱敏回显） |
+
+触发条件：`web.search.enabled=true` 且用户具备 `chat:web` 权限，且（前端选「联网」强制触发，或「自动」下内部置信度低于阈值）。Bocha Key 通过 `PUT /api/config/websearch/apikey` 写入、`PUT /api/config/websearch/enabled` 切换。
+
 ---
 
 ## 技术设计
@@ -422,6 +434,8 @@ rag-evaluation-service/
 | `PUT` | `/api/config` | 更新运行时配置，热更新无需重启 |
 | `PUT` | `/api/config/mode` | 快速切换检索模式 |
 | `PUT` | `/api/config/apikey` | 设置/清除 API Key（`{"apiKey":"sk-..."}`，空值清除并回退环境变量） |
+| `PUT` | `/api/config/websearch/enabled` | 切换联网全局开关（`{"enabled":true/false}`，`config:edit`） |
+| `PUT` | `/api/config/websearch/apikey` | 设置/清除 Bocha 联网搜索 Key（`{"apiKey":"..."}`，空值清除，`config:edit`） |
 | `POST` | `/api/config/rebuild-vector-index` | 重建向量索引（按当前配置重新入库 pgvector + ES） |
 | `GET` | `/api/evaluation/questions` | 读取评测测试集（`evaluation_question` 表） |
 | `POST` | `/api/evaluation/questions` | 新增测试题 |

@@ -31,6 +31,8 @@
 | `chunksRetrieved` | int | 召回 chunk 数 |
 | `maxChunkScore` | double | 召回 chunk 的最高相似度分 |
 | `piiRedactions` | int | 回答中脱敏的 PII 数量 |
+| `webSearchUsed` | bool | 是否触发联网搜索（知识库内置信度不足时自动联网补充，需 `web.search.enabled` 开启 + 用户 `chat:web` 权限） |
+| `webSearchLatencyMs` | long | 联网搜索耗时（毫秒，未触发时为 0） |
 | `status` | string | `success` / `refused` / `error` |
 
 ---
@@ -82,6 +84,8 @@ piiRedactions, chunksRetrieved, maxChunkScore, answerCompliance
   "chunksRetrieved": 5,
   "maxChunkScore": 0.832,
   "piiRedactions": 0,
+  "webSearchUsed": false,
+  "webSearchLatencyMs": 0,
   "status": "success"
 }
 ```

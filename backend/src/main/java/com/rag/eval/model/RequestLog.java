@@ -118,6 +118,12 @@ public class RequestLog {
     @Column(name = "cache_lookup_latency_ms")
     private long cacheLookupLatencyMs;
 
+    @Column(name = "web_search_used")
+    private boolean webSearchUsed;
+
+    @Column(name = "web_search_latency_ms")
+    private long webSearchLatencyMs;
+
     @Column(length = 16)
     private String status; // "success" | "refused" | "error"
 

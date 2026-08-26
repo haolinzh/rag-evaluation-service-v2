@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, Typography, Space, Tag, Spin } from 'antd';
+import { Input, Button, Typography, Space, Tag, Spin, Segmented } from 'antd';
 import { SendOutlined, UserOutlined, RobotOutlined, PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -30,6 +30,7 @@ interface Session {
 interface Props {
   retrievalMode: string;
   isGuest: boolean;
+  canWebSearch: boolean;
 }
 
 interface StoredSession {
@@ -77,7 +78,7 @@ const parseSources = (raw?: string | null): Source[] | undefined => {
   }
 };
 
-const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest }) => {
+const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch }) => {
   const initialRef = useRef<{ sessions: Session[]; activeId: string } | null>(null);
   if (initialRef.current === null) {
     const stored = readStored();
@@ -98,6 +99,7 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest }) => {
   const [activeId, setActiveId] = useState<string>(initialRef.current.activeId);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [webSearch, setWebSearch] = useState<'auto' | 'on' | 'off'>('auto');
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -204,7 +206,7 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest }) => {
     let accContent = '';
 
     try {
-      await streamAsk(q, active.id, retrievalMode, (evt) => {
+      await streamAsk(q, active.id, retrievalMode, webSearch, (evt) => {
         if (evt.type === 'thinking') {
           accThinking += evt.text ?? '';
           patchAssistant({ thinking: accThinking });
@@ -365,7 +367,13 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest }) => {
                       <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>来源</Text>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                         {msg.sources.map((s, i) => (
-                          <Tag key={i} color="blue" style={{ fontSize: 11, margin: 0 }}>{s.fileName}</Tag>
+                          s.url ? (
+                            <a key={i} href={s.url} target="_blank" rel="noreferrer">
+                              <Tag color="geekblue" style={{ fontSize: 11, margin: 0 }}>{s.fileName}</Tag>
+                            </a>
+                          ) : (
+                            <Tag key={i} color="blue" style={{ fontSize: 11, margin: 0 }}>{s.fileName}</Tag>
+                          )
                         ))}
                       </div>
                     </div>
@@ -379,6 +387,21 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest }) => {
           <div ref={messagesEndRef} />
         </div>
 
+        {canWebSearch && (
+          <div style={{ padding: '0 12px 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Segmented
+              size="small"
+              value={webSearch}
+              onChange={(v) => setWebSearch(v as 'auto' | 'on' | 'off')}
+              options={[
+                { label: '自动', value: 'auto' },
+                { label: '联网', value: 'on' },
+                { label: '仅知识库', value: 'off' },
+              ]}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>自动：知识库不足时联网补充</Text>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, paddingRight: 12, paddingBottom: 12 }}>
           <TextArea
             value={input}

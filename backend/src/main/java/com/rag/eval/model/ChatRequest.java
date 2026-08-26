@@ -7,4 +7,5 @@ public class ChatRequest {
     private String question;
     private String sessionId;
     private String mode;
+    private String webSearch;
 }

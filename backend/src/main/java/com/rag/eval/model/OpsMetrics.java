@@ -30,4 +30,6 @@ public class OpsMetrics {
     private long vectorLatencyMs;
     private long rerankLatencyMs;
     private long cacheLookupLatencyMs;
+    private boolean webSearchUsed;
+    private long webSearchLatencyMs;
 }

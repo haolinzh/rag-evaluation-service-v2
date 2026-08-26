@@ -31,7 +31,7 @@ public class ChatController {
     @PostMapping
     public ResponseEntity<ChatResponse> chat(@RequestBody ChatRequest request) {
         ChatResponse response = chatService.ask(request.getQuestion(), request.getSessionId(), request.getMode(),
-            authService.currentUserOrGuest());
+            request.getWebSearch(), authService.currentUserOrGuest());
         return ResponseEntity.ok(response);
     }
 
@@ -40,7 +40,7 @@ public class ChatController {
         SseEmitter emitter = new SseEmitter(0L);
         AuthenticatedUser viewer = authService.currentUserOrGuest();
         executor.execute(() -> chatService.streamAsk(
-            request.getQuestion(), request.getSessionId(), request.getMode(), emitter, viewer));
+            request.getQuestion(), request.getSessionId(), request.getMode(), request.getWebSearch(), emitter, viewer));
         return emitter;
     }
 
