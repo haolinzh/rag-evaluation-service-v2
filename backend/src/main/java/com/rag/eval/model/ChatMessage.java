@@ -23,6 +23,12 @@ public class ChatMessage {
     @Column(nullable = false, length = 64)
     private String sessionId;
 
+    @Column(name = "owner_id")
+    private Long ownerId;
+
+    @Column(name = "owner_username", length = 64)
+    private String ownerUsername;
+
     @Column(nullable = false, length = 16)
     private String role; // "user" or "assistant"
 

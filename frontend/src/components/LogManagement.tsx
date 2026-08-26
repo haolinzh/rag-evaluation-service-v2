@@ -7,6 +7,7 @@ import type { RequestLog } from '../types';
 
 interface Props {
   onBack: () => void;
+  canClear: boolean;
 }
 
 const statusColor: Record<string, string> = {
@@ -77,7 +78,7 @@ const renderChunks = (json?: string | null) => {
   );
 };
 
-const LogManagement: React.FC<Props> = ({ onBack }) => {
+const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
   const [logs, setLogs] = useState<RequestLog[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -110,6 +111,7 @@ const LogManagement: React.FC<Props> = ({ onBack }) => {
     { title: '时间', dataIndex: 'createdAt', key: 'createdAt', width: 160, render: (v: string) => formatTime(v) },
     { title: '请求 ID', dataIndex: 'requestId', key: 'requestId', width: 240, ellipsis: true },
     { title: 'Session', dataIndex: 'sessionId', key: 'sessionId', width: 200, ellipsis: true },
+    { title: '用户', dataIndex: 'ownerUsername', key: 'ownerUsername', width: 100, ellipsis: true, render: (v: string | null) => v || '—' },
     { title: '问题', dataIndex: 'question', key: 'question', ellipsis: true },
     { title: '模式', dataIndex: 'retrievalMode', key: 'retrievalMode', width: 90 },
     { title: '模型', dataIndex: 'model', key: 'model', width: 100 },
@@ -128,9 +130,11 @@ const LogManagement: React.FC<Props> = ({ onBack }) => {
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>日志管理</Typography.Title>
         <Button icon={<ReloadOutlined />} onClick={refresh} loading={loading}>刷新</Button>
-        <Popconfirm title="确定清空所有日志？" onConfirm={handleClear} okText="清空" cancelText="取消">
-          <Button icon={<DeleteOutlined />} danger>清空日志</Button>
-        </Popconfirm>
+        {canClear && (
+          <Popconfirm title="确定清空所有日志？" onConfirm={handleClear} okText="清空" cancelText="取消">
+            <Button icon={<DeleteOutlined />} danger>清空日志</Button>
+          </Popconfirm>
+        )}
       </div>
 
       <Table<RequestLog>

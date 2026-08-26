@@ -29,6 +29,7 @@ interface Session {
 
 interface Props {
   retrievalMode: string;
+  isGuest: boolean;
 }
 
 interface StoredSession {
@@ -76,7 +77,7 @@ const parseSources = (raw?: string | null): Source[] | undefined => {
   }
 };
 
-const ChatPanel: React.FC<Props> = ({ retrievalMode }) => {
+const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest }) => {
   const initialRef = useRef<{ sessions: Session[]; activeId: string } | null>(null);
   if (initialRef.current === null) {
     const stored = readStored();
@@ -110,6 +111,7 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode }) => {
   }, [sessions, activeId]);
 
   useEffect(() => {
+    if (isGuest) return;
     const target = sessions.find(s => s.id === activeId);
     if (!target || target.loaded) return;
     getChatHistory(target.id)
@@ -133,7 +135,7 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode }) => {
       .catch(() => {
         setSessions(prev => prev.map(s => (s.id === target.id ? { ...s, loaded: true } : s)));
       });
-  }, [activeId]);
+  }, [activeId, isGuest]);
 
   useEffect(() => {
     const el = messagesContainerRef.current;
@@ -157,7 +159,7 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode }) => {
     if (activeId === id) {
       setActiveId(next[0].id);
     }
-    deleteChatHistory(id).catch(() => {});
+    if (!isGuest) deleteChatHistory(id).catch(() => {});
   };
 
   const startRename = (s: Session) => {

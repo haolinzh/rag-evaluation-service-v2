@@ -76,6 +76,10 @@
 | **向量库可切换** | 语义检索后端支持 pgvector / Elasticsearch dense_vector 运行时切换，入库双写两库、切换即时生效无需重新入库；索引类型/lists 等建索引参数改动后一键重建 |
 | **测试集管理** | 测试题存入 PostgreSQL（`evaluation_question` 表），支持增删改查、按题型/难度/语言标注，评测可按题型子集运行 |
 | **运行时配置** | 检索参数、模型选择、生成参数、向量后端、安全阈值、语义缓存可通过「系统配置」页热更新，持久化到 `system_config` 表，无需重启 |
+| **登录与权限（RBAC）** | 用户名 + 密码登录（BCrypt），`用户` N:M `角色` N:M `权限` 三层模型；权限目录代码固定、角色可在 UI 编辑并分配给用户；Spring Security + Bearer Token 无状态鉴权 |
+| **文档四档可见性** | 文档归属作者（部门），可见性分 `PUBLIC` / `DEPARTMENT` / `EXECUTIVE` / `PRIVATE` 四档；高管经 `document:read:any` 全局穿透（含作者私有），管理员可管理任意文档 |
+| **请求日志归属** | 每次问答记录请求人 `ownerId` / `ownerUsername`；登录用户默认仅见自己的日志，`log:view` 权限者可见全部 |
+| **系统提示词配置** | 「系统配置」页可编辑发送给大模型的系统提示词，空值回退默认；检索到的文档内容自动拼接在提示词末尾 |
 
 ---
 
@@ -131,6 +135,14 @@ docker-compose ps
 ### 5. 访问前端
 
 浏览器打开 `http://localhost:3000`。前端已容器化（nginx 托管静态产物 + 反代 `/api` 到后端），无需单独启动。
+
+首次启动会自动创建默认管理员账号，用其登录即可进入：
+
+| 账号 | 密码 | 角色 |
+|---|---|---|
+| `admin` | `admin` | 管理员（拥有全部权限） |
+
+登录后可在「用户管理」「角色管理」页新增用户、分配角色；也支持自助注册新账号（固定「普通员工」角色，防提权）。
 
 ---
 
@@ -223,14 +235,16 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
 
 ### 3. 请求日志
 
-后端将每次问答请求以「请求」为 entry 持久化到 PostgreSQL（`request_log` 表），字段包括：请求 ID、时间、问题、回答、session、模型、检索模式、命中文档、总/检索/生成延迟、LLM 调用次数、prompt/completion token、缓存命中、拒答及原因、召回 chunk 数、最高相似度、PII 脱敏数、状态（`success` / `refused` / `error`）。
+后端将每次问答请求以「请求」为 entry 持久化到 PostgreSQL（`request_log` 表），字段包括：请求 ID、时间、请求人（`ownerId` / `ownerUsername`）、问题、回答、session、模型、检索模式、命中文档、总/检索/生成延迟、LLM 调用次数、prompt/completion token、缓存命中、拒答及原因、召回 chunk 数、最高相似度、PII 脱敏数、状态（`success` / `refused` / `error`）。
 
 前端提供两处查看入口：
 
 - 主页右侧「日志」面板：每 5 秒自动刷新，显示最近请求概览；
 - 「日志管理」独立页：全量表格 + 可展开行查看完整字段，支持刷新与清空。
 
-接口：`GET /api/logs?limit=N`（默认 100，上限 1000）、`DELETE /api/logs`。
+**日志可见性**：登录用户默认仅能看到自己的请求日志；拥有 `log:view` 权限（管理员）可查看全部；未登录（游客）看不到日志。
+
+接口：`GET /api/logs?limit=N`（默认 100，上限 1000）、`DELETE /api/logs`（`log:clear`）。
 
 ### 4. 配置说明
 
@@ -267,6 +281,7 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
 | 层 | 技术 |
 |---|---|
 | 后端框架 | Spring Boot 3.4.1 (Java 17) |
+| 认证鉴权 | Spring Security 6（BCrypt + Bearer Token 无状态会话 + `@PreAuthorize` 方法级权限） |
 | 大模型 | 阿里云百炼 DashScope：`qwen-turbo` (对话) + `text-embedding-v3` (向量) + `qwen3-rerank` (精排)；对话可切换 `qwen-plus` / `qwen-max` / `deepseek-r1` 等模型 |
 | 关键词检索 | Elasticsearch 8.13.4（BM25 `match`） |
 | 向量数据库 | PostgreSQL 16 + pgvector（cosine `<=>` 操作符）与 Elasticsearch dense_vector（kNN），**运行时可切换** |
@@ -338,11 +353,11 @@ rag-evaluation-service/
 │   └── src/
 │       ├── main/java/com/rag/eval/
 │       │   ├── RAGApplication.java
-│       │   ├── config/             # WebConfig / ES / Redis / pgvector
-│       │   ├── controller/         # Chat / Document / Report / Log / Cache / Config / Evaluation
-│       │   ├── model/              # DTO + JPA 实体（含 RequestLog）
-│       │   ├── repository/         # JPA + JDBC(pgvector 原生 SQL)
-│       │   ├── service/            # 检索(VectorStore 策略)/重排/安全/脱敏/缓存/指标/报告/评测/重建/语料
+│       │   ├── config/             # WebConfig / ES / Redis / pgvector / SecurityConfig / DataInitializer
+│       │   ├── controller/         # Chat / Document / Report / Log / Cache / Config / Evaluation / Auth
+│       │   ├── model/              # DTO + JPA 实体（含 RequestLog / AppUser / Role / Permission）
+│       │   ├── repository/         # JPA + JDBC(pgvector 原生 SQL)（含 UserRepo / RoleRepo / PermissionRepo）
+│       │   ├── service/            # 检索(VectorStore 策略)/重排/安全/脱敏/缓存/指标/报告/评测/重建/语料/Auth/Authorization/Token
 │       │   └── pipeline/           # 入库管道（解析/分块/索引）
 │       ├── main/resources/
 │       │   ├── application.yml
@@ -354,13 +369,16 @@ rag-evaluation-service/
 │   └── src/
 │       ├── App.tsx                 # 三栏可拖动 + 响应式布局
 │       └── components/
-│           ├── DocumentPanel.tsx    # 上传（chunk 配置）+ 检索模式切换
-│           ├── DocumentManagement.tsx # 文档管理页（chunk 预览）
+│           ├── LoginModal.tsx        # 登录/注册弹窗（token 存储 + 401 自动跳转）
+│           ├── DocumentPanel.tsx    # 上传（chunk 配置 + 可见性选择）+ 检索模式切换
+│           ├── DocumentManagement.tsx # 文档管理页（chunk 预览 + owner/可见性展示）
 │           ├── ChatPanel.tsx        # 多轮对话 + 来源展示
-│           ├── ConfigPage.tsx       # 系统配置页（检索/模型/生成/向量/安全/缓存热更新）
+│           ├── ConfigPage.tsx       # 系统配置页（检索/模型/生成含系统提示词/向量/安全/缓存热更新）
 │           ├── MetricsPanel.tsx     # 指标面板 + CSV 下载 + 清缓存
 │           ├── LogPanel.tsx         # 主页日志（自动刷新）
 │           ├── LogManagement.tsx    # 日志管理页（全量明细）
+│           ├── UserManagement.tsx   # 用户管理页（CRUD + 部门 + 角色多选）
+│           ├── RoleManagement.tsx   # 角色管理页（CRUD + 权限分组勾选）
 │           ├── EvaluationPage.tsx   # 一键测评页（三模式对比 + 历史回看 + 题型筛选）
 │           └── QuestionManagement.tsx # 测试集管理页（增删改查）
 ├── test-docs/                      # 8 份 case study 语料（测评前自动入库的源目录）
@@ -372,8 +390,20 @@ rag-evaluation-service/
 
 ### 4. API 接口
 
+> 除 `POST /api/auth/login`、`POST /api/auth/register`、`GET /api/auth/guest-permissions` 外，所有 `/api/**` 接口需在请求头携带 `Authorization: Bearer <token>`（登录接口返回）。未认证返回 `401`，无权限返回 `403`。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
+| `POST` | `/api/auth/login` | 登录，请求体 `{"username":"...","password":"..."}`，返回 `{"token":"...","user":{...}}` |
+| `POST` | `/api/auth/register` | 自助注册（固定「普通员工」角色），请求体 `{"username","password","displayName","department"}` |
+| `POST` | `/api/auth/logout` | 退出登录（吊销 token） |
+| `GET` | `/api/auth/me` | 当前登录用户（含权限码） |
+| `GET` | `/api/auth/guest-permissions` | 游客（未登录）可见的权限码集合 |
+| `GET` | `/api/auth/permissions` | 权限目录（供角色编辑器勾选，`user:manage`/`role:manage`） |
+| `GET/POST` | `/api/auth/users` | 用户列表 / 新建用户（`user:manage`） |
+| `PUT/DELETE` | `/api/auth/users/{id}` | 更新 / 删除用户（`user:manage`） |
+| `GET/POST` | `/api/auth/roles` | 角色列表 / 新建角色（`user:manage`/`role:manage`） |
+| `PUT/DELETE` | `/api/auth/roles/{id}` | 更新 / 删除角色（`role:manage`，内置角色禁删） |
 | `POST` | `/api/chat` | 多轮问答，请求体 `{"question": "...", "sessionId": "...", "mode": "hybrid"}` |
 | `POST` | `/api/chat/stream` | 流式问答（SSE，逐 token 返回 `thinking`/`content`/`done` 事件） |
 | `GET` | `/api/chat/history/{sessionId}` | 查询会话历史 |

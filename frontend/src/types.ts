@@ -13,6 +13,64 @@ export interface DocumentMeta {
   errorMessage?: string;
   embeddingModel?: string;
   embeddingDimension?: number;
+  ownerName?: string;
+  ownerDepartment?: string;
+  visibility?: 'PUBLIC' | 'DEPARTMENT' | 'EXECUTIVE' | 'PRIVATE';
+}
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  displayName: string;
+  department: string | null;
+  permissions: string[];
+}
+
+export interface Permission {
+  code: string;
+  name: string;
+  group: string;
+}
+
+export interface Role {
+  id: number;
+  code: string;
+  name: string;
+  description: string | null;
+  builtin: boolean;
+  permissionCodes: string[];
+}
+
+export interface ManagedUser {
+  id: number;
+  username: string;
+  displayName: string | null;
+  department: string | null;
+  enabled: boolean;
+  roleCodes: string[];
+}
+
+export interface UserRequest {
+  username: string;
+  password?: string;
+  displayName?: string;
+  department?: string;
+  enabled?: boolean;
+  roleCodes?: string[];
+}
+
+export interface RegisterRequest {
+  username: string;
+  password: string;
+  displayName?: string;
+  department?: string;
+}
+
+export interface RoleRequest {
+  code: string;
+  name: string;
+  description?: string;
+  permissionCodes?: string[];
 }
 
 export interface ChunkPreview {
@@ -74,6 +132,8 @@ export interface RequestLog {
   id: number;
   requestId: string;
   sessionId: string;
+  ownerId: number | null;
+  ownerUsername: string | null;
   createdAt: string;
   question: string;
   answer: string | null;
@@ -131,7 +191,7 @@ export interface SystemConfig {
   };
   cache: { enabled: boolean; ttlSeconds: number };
   judge: { enabled: boolean; model: string; temperature: number };
-  generation: { temperature: number; topP: number; maxTokens: number };
+  generation: { temperature: number; topP: number; maxTokens: number; systemPrompt: string };
   vector: {
     backend: 'pgvector' | 'elasticsearch';
     pgvector: { indexType: 'ivfflat' | 'hnsw'; lists: number; probes: number; efSearch: number };

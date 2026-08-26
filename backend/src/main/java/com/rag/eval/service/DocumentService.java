@@ -1,22 +1,32 @@
 package com.rag.eval.service;
 
+import com.rag.eval.model.AuthenticatedUser;
 import com.rag.eval.model.ChunkConfig;
 import com.rag.eval.model.ChunkPreview;
 import com.rag.eval.model.DocumentMeta;
 import com.rag.eval.repository.DocumentMetaRepo;
 import com.rag.eval.repository.VectorChunkRepo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayInputStream;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @Service
 public class DocumentService {
+
+    private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
 
     public static final String STATUS_PENDING = "PENDING";
     public static final String STATUS_READY = "READY";
@@ -26,6 +36,7 @@ public class DocumentService {
     private static final String DEFAULT_EMBEDDING_MODEL = "text-embedding-v3";
     // 维度已锁定 1024（不支持多维度 embedding 模型），与 ConfigController.EMBEDDING_DIMENSION 对齐。
     private static final int EMBEDDING_DIMENSION = 1024;
+    private static final Set<String> VISIBILITIES = Set.of("PUBLIC", "DEPARTMENT", "EXECUTIVE", "PRIVATE");
 
     private final DocumentParserService parser;
     private final IndexBuilder indexBuilder;
@@ -35,13 +46,15 @@ public class DocumentService {
     private final SemanticCacheService cacheService;
     private final FileStorageService fileStorage;
     private final ConfigService configService;
+    private final AuthorizationService authorizationService;
     // 串行处理入库任务：避免并发 embedding 限流与双写冲突，大文件按序排队。
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     public DocumentService(DocumentParserService parser, IndexBuilder indexBuilder,
                            DocumentMetaRepo docRepo, VectorChunkRepo vectorChunkRepo,
                            ElasticsearchService esService, SemanticCacheService cacheService,
-                           FileStorageService fileStorage, ConfigService configService) {
+                           FileStorageService fileStorage, ConfigService configService,
+                           AuthorizationService authorizationService) {
         this.parser = parser;
         this.indexBuilder = indexBuilder;
         this.docRepo = docRepo;
@@ -50,19 +63,29 @@ public class DocumentService {
         this.cacheService = cacheService;
         this.fileStorage = fileStorage;
         this.configService = configService;
+        this.authorizationService = authorizationService;
     }
 
     public record OriginalFile(String fileName, byte[] bytes) {}
 
     public DocumentMeta ingest(MultipartFile file) throws Exception {
-        return ingest(file, ChunkConfig.defaults());
+        return ingest(file, ChunkConfig.defaults(), null, "PUBLIC");
     }
 
     public DocumentMeta ingest(MultipartFile file, ChunkConfig config) throws Exception {
-        return ingestBytes(file.getOriginalFilename(), file.getBytes(), file.getSize(), config);
+        return ingest(file, config, null, "PUBLIC");
+    }
+
+    public DocumentMeta ingest(MultipartFile file, ChunkConfig config, AuthenticatedUser owner, String visibility) throws Exception {
+        return ingestBytes(file.getOriginalFilename(), file.getBytes(), file.getSize(), config, owner, visibility);
     }
 
     public DocumentMeta ingestBytes(String fileName, byte[] bytes, long fileSize, ChunkConfig config) throws Exception {
+        return ingestBytes(fileName, bytes, fileSize, config, null, "PUBLIC");
+    }
+
+    public DocumentMeta ingestBytes(String fileName, byte[] bytes, long fileSize, ChunkConfig config,
+                                    AuthenticatedUser owner, String visibility) throws Exception {
         // Same-name re-upload replaces the previous version.
         DocumentMeta meta = docRepo.findByFileName(fileName).orElse(null);
         if (meta != null) {
@@ -85,6 +108,10 @@ public class DocumentService {
         meta.setStoredFileName(storedFileName);
         meta.setEmbeddingModel(configService.get(EMBEDDING_MODEL_KEY, DEFAULT_EMBEDDING_MODEL));
         meta.setEmbeddingDimension(EMBEDDING_DIMENSION);
+        meta.setOwnerId(owner != null ? owner.id() : null);
+        meta.setOwnerName(owner != null ? owner.displayName() : null);
+        meta.setOwnerDepartment(owner != null ? owner.department() : null);
+        meta.setVisibility(normalizeVisibility(visibility));
         meta.setStatus(STATUS_PENDING);
         meta.setErrorMessage(null);
         meta = docRepo.save(meta);
@@ -120,10 +147,22 @@ public class DocumentService {
             docRepo.save(meta);
         } catch (Exception e) {
             // 清理可能的部分写入，避免脏数据进入检索；文件保留，删除文档时统一清。
+            log.warn("Document ingest failed: id={}, file={}", meta.getId(), meta.getFileName(), e);
             clearIndexedData(meta);
             meta.setStatus(STATUS_FAILED);
             meta.setErrorMessage(e.getMessage());
             docRepo.save(meta);
+        }
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void recoverPendingDocuments() {
+        List<DocumentMeta> pending = docRepo.findAll().stream()
+            .filter(d -> STATUS_PENDING.equals(d.getStatus()))
+            .toList();
+        for (DocumentMeta meta : pending) {
+            log.info("Recovering pending document: id={}, file={}", meta.getId(), meta.getFileName());
+            executor.execute(() -> processAsync(meta));
         }
     }
 
@@ -135,41 +174,42 @@ public class DocumentService {
         return new ChunkConfig(splitMode, chunkSize, delimiter, overlap);
     }
 
-    public List<DocumentMeta> listAll() {
+    public List<DocumentMeta> listAll(AuthenticatedUser viewer) {
         // 最新的排前面，避免新增文档被挤到分页第二页而“看不到”。
-        return docRepo.findAll(Sort.by(Sort.Direction.DESC, "id"));
+        return docRepo.findAll(Sort.by(Sort.Direction.DESC, "id")).stream()
+            .filter(d -> authorizationService.canView(viewer, d))
+            .toList();
     }
 
-    public List<ChunkPreview> getChunkPreviews(Long id) {
-        return docRepo.findById(id)
-            .map(m -> vectorChunkRepo.findPreviewsByFileName(m.getFileName()))
-            .orElse(List.of());
+    public List<ChunkPreview> getChunkPreviews(Long id, AuthenticatedUser viewer) {
+        DocumentMeta meta = requireView(id, viewer);
+        return vectorChunkRepo.findPreviewsByFileName(meta.getFileName());
     }
 
-    public void deleteById(Long id) {
-        docRepo.findById(id).ifPresent(meta -> {
-            deleteIndexedData(meta);
-            docRepo.delete(meta);
-        });
+    public void deleteById(Long id, AuthenticatedUser viewer) {
+        DocumentMeta meta = requireManage(id, viewer);
+        deleteIndexedData(meta);
+        docRepo.delete(meta);
     }
 
-    public Optional<OriginalFile> getOriginal(Long id) {
-        return docRepo.findById(id).flatMap(m -> {
-            try {
-                byte[] bytes = fileStorage.load(m.getStoredFileName());
-                return bytes == null ? Optional.empty() : Optional.of(new OriginalFile(m.getFileName(), bytes));
-            } catch (Exception e) {
-                System.err.println("Failed to load original file: " + e.getMessage());
-                return Optional.empty();
-            }
-        });
+    public Optional<OriginalFile> getOriginal(Long id, AuthenticatedUser viewer) {
+        DocumentMeta meta = requireView(id, viewer);
+        try {
+            byte[] bytes = fileStorage.load(meta.getStoredFileName());
+            return bytes == null ? Optional.empty() : Optional.of(new OriginalFile(meta.getFileName(), bytes));
+        } catch (Exception e) {
+            System.err.println("Failed to load original file: " + e.getMessage());
+            return Optional.empty();
+        }
     }
 
-    public DocumentMeta reprocess(Long id, ChunkConfig config) {
-        DocumentMeta meta = docRepo.findById(id)
-            .orElseThrow(() -> new IllegalArgumentException("文档不存在: " + id));
+    public DocumentMeta reprocess(Long id, ChunkConfig config, AuthenticatedUser viewer, String visibility) {
+        DocumentMeta meta = requireManage(id, viewer);
         // 清掉旧 chunk 与向量（原文件保留，直接复用重切），改配置后重新入列处理。
         clearIndexedData(meta);
+        if (visibility != null && !visibility.isBlank()) {
+            meta.setVisibility(normalizeVisibility(visibility));
+        }
         meta.setSplitMode(config.splitMode());
         meta.setChunkSize(config.chunkSize());
         meta.setOverlap(config.overlap());
@@ -183,6 +223,28 @@ public class DocumentService {
         final DocumentMeta saved = meta;
         executor.execute(() -> processAsync(saved));
         return saved;
+    }
+
+    private DocumentMeta requireView(Long id, AuthenticatedUser viewer) {
+        DocumentMeta meta = docRepo.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "文档不存在: " + id));
+        if (!authorizationService.canView(viewer, meta)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权限访问该文档");
+        }
+        return meta;
+    }
+
+    private DocumentMeta requireManage(Long id, AuthenticatedUser viewer) {
+        DocumentMeta meta = docRepo.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "文档不存在: " + id));
+        if (!authorizationService.canManage(viewer, meta)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权限管理该文档");
+        }
+        return meta;
+    }
+
+    private String normalizeVisibility(String v) {
+        return v != null && VISIBILITIES.contains(v.toUpperCase()) ? v.toUpperCase() : "DEPARTMENT";
     }
 
     private void clearIndexedData(DocumentMeta meta) {

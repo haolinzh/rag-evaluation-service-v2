@@ -26,7 +26,7 @@ public record SystemConfigDto(
 
     public record Judge(boolean enabled, String model, double temperature) {}
 
-    public record Generation(double temperature, double topP, int maxTokens) {}
+    public record Generation(double temperature, double topP, int maxTokens, String systemPrompt) {}
 
     public record Vector(String backend, Pgvector pgvector, Elasticsearch elasticsearch) {}
 

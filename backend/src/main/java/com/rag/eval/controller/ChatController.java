@@ -1,8 +1,10 @@
 package com.rag.eval.controller;
 
+import com.rag.eval.model.AuthenticatedUser;
 import com.rag.eval.model.ChatMessage;
 import com.rag.eval.model.ChatRequest;
 import com.rag.eval.model.ChatResponse;
+import com.rag.eval.service.AuthService;
 import com.rag.eval.service.ChatService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -18,34 +20,38 @@ import java.util.concurrent.Executors;
 public class ChatController {
 
     private final ChatService chatService;
+    private final AuthService authService;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, AuthService authService) {
         this.chatService = chatService;
+        this.authService = authService;
     }
 
     @PostMapping
     public ResponseEntity<ChatResponse> chat(@RequestBody ChatRequest request) {
-        ChatResponse response = chatService.ask(request.getQuestion(), request.getSessionId(), request.getMode());
+        ChatResponse response = chatService.ask(request.getQuestion(), request.getSessionId(), request.getMode(),
+            authService.currentUserOrGuest());
         return ResponseEntity.ok(response);
     }
 
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@RequestBody ChatRequest request) {
         SseEmitter emitter = new SseEmitter(0L);
+        AuthenticatedUser viewer = authService.currentUserOrGuest();
         executor.execute(() -> chatService.streamAsk(
-            request.getQuestion(), request.getSessionId(), request.getMode(), emitter));
+            request.getQuestion(), request.getSessionId(), request.getMode(), emitter, viewer));
         return emitter;
     }
 
     @GetMapping("/history/{sessionId}")
     public ResponseEntity<List<ChatMessage>> history(@PathVariable String sessionId) {
-        return ResponseEntity.ok(chatService.getHistory(sessionId));
+        return ResponseEntity.ok(chatService.getHistory(sessionId, authService.currentUser()));
     }
 
     @DeleteMapping("/history/{sessionId}")
     public ResponseEntity<Void> deleteHistory(@PathVariable String sessionId) {
-        chatService.deleteHistory(sessionId);
+        chatService.deleteHistory(sessionId, authService.currentUser());
         return ResponseEntity.noContent().build();
     }
 }

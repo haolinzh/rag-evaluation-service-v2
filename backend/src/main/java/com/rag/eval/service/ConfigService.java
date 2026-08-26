@@ -15,6 +15,13 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class ConfigService {
 
+    public static final String KEY_SYSTEM_PROMPT = "generation.system-prompt";
+    public static final String DEFAULT_SYSTEM_PROMPT =
+        "你是一个专业的知识库助手。请严格基于下方【文档内容】回答用户问题。\n"
+        + "如果文档内容不足以回答问题，请明确说明\"该知识库中暂无相关信息\"。\n"
+        + "引用来源时，只能引用【文档内容】中出现的文件名，禁止引用对话历史、记忆或其他外部来源中的文件名。\n"
+        + "回答请使用 Markdown 排版：关键结论加粗、要点用列表、必要时用小标题分级。";
+
     private final Environment env;
     private final SystemConfigRepo repo;
     private final Map<String, String> overrides = new ConcurrentHashMap<>();

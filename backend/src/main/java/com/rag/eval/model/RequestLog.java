@@ -25,6 +25,12 @@ public class RequestLog {
     @Column(name = "session_id", length = 64)
     private String sessionId;
 
+    @Column(name = "owner_id")
+    private Long ownerId;
+
+    @Column(name = "owner_username", length = 64)
+    private String ownerUsername;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

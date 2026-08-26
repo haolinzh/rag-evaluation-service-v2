@@ -13,23 +13,42 @@ interface Props {
   onModeChange: (mode: string) => void;
   onRefresh: () => void;
   onOpenManagement: () => void;
+  canManageDocs: boolean;
+  onRequireLogin: () => void;
 }
 
 const labelStyle: React.CSSProperties = { fontSize: 12, color: '#8c8c8c', marginBottom: 4 };
 
-const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange, onRefresh, onOpenManagement }) => {
+const VISIBILITY_OPTIONS = [
+  { value: 'PUBLIC', label: '所有人可见' },
+  { value: 'DEPARTMENT', label: '本部门可见' },
+  { value: 'EXECUTIVE', label: '高管可见' },
+  { value: 'PRIVATE', label: '仅作者可见' },
+];
+
+const visibilityColor: Record<string, string> = {
+  PUBLIC: 'green',
+  DEPARTMENT: 'blue',
+  EXECUTIVE: 'gold',
+  PRIVATE: 'red',
+};
+
+const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange, onRefresh, onOpenManagement, canManageDocs, onRequireLogin }) => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [splitMode, setSplitMode] = useState<'size' | 'delimiter'>('size');
   const [chunkSize, setChunkSize] = useState(1000);
   const [delimiter, setDelimiter] = useState('');
   const [overlap, setOverlap] = useState(150);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingVisibility, setPendingVisibility] = useState<'PUBLIC' | 'DEPARTMENT' | 'EXECUTIVE' | 'PRIVATE'>('DEPARTMENT');
+  const [visibilityModalOpen, setVisibilityModalOpen] = useState(false);
 
-  const doUpload = async (file: File) => {
+  const doUpload = async (file: File, vis: string) => {
     setUploading(true);
     setProgress(0);
     try {
-      await uploadDocument(file, { splitMode, chunkSize, delimiter, overlap }, setProgress);
+      await uploadDocument(file, { splitMode, chunkSize, delimiter, overlap }, vis, setProgress);
       message.success(`${file.name} 已上传，后台处理中`);
       onRefresh();
     } catch (err) {
@@ -42,6 +61,23 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
   };
 
   const handleUpload = (file: File) => {
+    if (!canManageDocs) {
+      message.info('请先登录后上传文档');
+      onRequireLogin();
+      return false;
+    }
+    setPendingFile(file);
+    setPendingVisibility('DEPARTMENT');
+    setVisibilityModalOpen(true);
+    return false; // prevent default upload
+  };
+
+  const confirmUpload = () => {
+    const file = pendingFile;
+    const vis = pendingVisibility;
+    setVisibilityModalOpen(false);
+    setPendingFile(null);
+    if (!file) return;
     if (documents.some(d => d.fileName === file.name)) {
       Modal.confirm({
         title: '同名文件已存在',
@@ -49,12 +85,11 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
         okText: '覆盖',
         okButtonProps: { danger: true },
         cancelText: '取消',
-        onOk: () => doUpload(file),
+        onOk: () => doUpload(file, vis),
       });
     } else {
-      doUpload(file);
+      doUpload(file, vis);
     }
-    return false; // prevent default upload
   };
 
   const handleDelete = async (id: number) => {
@@ -136,7 +171,9 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
         <Text type="secondary" style={{ fontSize: 12 }}>{documents.length} 个文档</Text>
         <span>
           <Button type="text" size="small" icon={<ReloadOutlined />} onClick={onRefresh}>刷新</Button>
-          <Button type="text" size="small" icon={<FolderOpenOutlined />} onClick={onOpenManagement}>管理</Button>
+          {canManageDocs && (
+            <Button type="text" size="small" icon={<FolderOpenOutlined />} onClick={onOpenManagement}>管理</Button>
+          )}
         </span>
       </div>
 
@@ -148,11 +185,13 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
             style={{ padding: '8px 4px' }}
             actions={[
               <Tooltip title="下载原文件" key="dl">
-                <Button size="small" type="text" icon={<DownloadOutlined />} onClick={() => downloadDocument(doc.id)} />
+                <Button size="small" type="text" icon={<DownloadOutlined />} onClick={() => { downloadDocument(doc.id).catch(() => message.error('下载失败')); }} />
               </Tooltip>,
-              <Popconfirm title="确认删除？" onConfirm={() => handleDelete(doc.id)} key="del">
-                <Button size="small" danger type="text" icon={<DeleteOutlined />}>删除</Button>
-              </Popconfirm>
+              ...(canManageDocs ? [
+                <Popconfirm title="确认删除？" onConfirm={() => handleDelete(doc.id)} key="del">
+                  <Button size="small" danger type="text" icon={<DeleteOutlined />}>删除</Button>
+                </Popconfirm>
+              ] : []),
             ]}
           >
             <List.Item.Meta
@@ -163,6 +202,11 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
               }
               description={
                 <Space size={4} wrap>
+                  {doc.visibility && (
+                    <Tag color={visibilityColor[doc.visibility]} style={{ marginInlineEnd: 0 }}>
+                      {VISIBILITY_OPTIONS.find(o => o.value === doc.visibility)?.label || doc.visibility}
+                    </Tag>
+                  )}
                   <Tag style={{ marginInlineEnd: 0 }}>{formatSize(doc.fileSize)}</Tag>
                   {doc.status === 'PENDING' ? (
                     <Tag color="processing" style={{ marginInlineEnd: 0 }}>处理中</Tag>
@@ -179,6 +223,23 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
           </List.Item>
         )}
       />
+      <Modal
+        open={visibilityModalOpen}
+        title="选择文档可见性"
+        okText="上传"
+        cancelText="取消"
+        onOk={confirmUpload}
+        onCancel={() => { setVisibilityModalOpen(false); setPendingFile(null); }}
+        destroyOnClose
+      >
+        <div style={labelStyle}>「{pendingFile?.name ?? ''}」的可见性</div>
+        <Select
+          value={pendingVisibility}
+          onChange={(v) => setPendingVisibility(v as 'PUBLIC' | 'DEPARTMENT' | 'EXECUTIVE' | 'PRIVATE')}
+          style={{ width: '100%' }}
+          options={VISIBILITY_OPTIONS}
+        />
+      </Modal>
     </div>
   );
 };

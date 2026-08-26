@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface ChatHistoryRepo extends JpaRepository<ChatMessage, Long> {
-    List<ChatMessage> findBySessionIdOrderByCreatedAtAsc(String sessionId);
+    List<ChatMessage> findBySessionIdAndOwnerIdOrderByCreatedAtAsc(String sessionId, Long ownerId);
 
-    void deleteBySessionId(String sessionId);
+    void deleteBySessionIdAndOwnerId(String sessionId, Long ownerId);
 }

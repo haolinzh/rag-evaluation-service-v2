@@ -16,7 +16,7 @@ public class DocumentMeta {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "file_name", nullable = false)
+    @Column(name = "file_name", nullable = false, unique = true)
     private String fileName;
 
     @Column(name = "file_size")
@@ -57,6 +57,18 @@ public class DocumentMeta {
 
     @Column(name = "embedding_dimension")
     private Integer embeddingDimension;
+
+    @Column(name = "owner_id")
+    private Long ownerId;
+
+    @Column(name = "owner_name")
+    private String ownerName;
+
+    @Column(name = "owner_department")
+    private String ownerDepartment;
+
+    @Column(name = "visibility", length = 16)
+    private String visibility = "DEPARTMENT";
 
     @PrePersist
     protected void onCreate() {

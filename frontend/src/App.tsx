@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, theme, Grid, Button, Drawer } from 'antd';
-import { FileTextOutlined, BarChartOutlined, SettingOutlined, ExperimentOutlined, DashboardOutlined } from '@ant-design/icons';
+import { Layout, theme, Grid, Button, Drawer, Space } from 'antd';
+import { FileTextOutlined, BarChartOutlined, SettingOutlined, ExperimentOutlined, DashboardOutlined, TeamOutlined, SafetyCertificateOutlined, LogoutOutlined, LoginOutlined, UserOutlined, ControlOutlined } from '@ant-design/icons';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import DocumentPanel from './components/DocumentPanel';
 import ChatPanel from './components/ChatPanel';
@@ -11,26 +11,63 @@ import LogManagement from './components/LogManagement';
 import ConfigPage from './components/ConfigPage';
 import EvaluationPage from './components/EvaluationPage';
 import OpsPage from './components/OpsPage';
-import type { DocumentMeta } from './types';
-import { listDocuments, fetchConfig, updateRetrievalMode } from './api';
+import LoginModal from './components/LoginModal';
+import UserManagement from './components/UserManagement';
+import RoleManagement from './components/RoleManagement';
+import type { DocumentMeta, AuthUser } from './types';
+import { listDocuments, fetchConfig, updateRetrievalMode, getToken, getCachedUser, setAuth, fetchMe, logout, fetchGuestPermissions } from './api';
 
 const { Header, Content } = Layout;
+
+type View = 'main' | 'documents' | 'logs' | 'config' | 'eval' | 'ops' | 'users' | 'roles';
 
 const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [retrievalMode, setRetrievalMode] = useState<string>('hybrid');
-  const [view, setView] = useState<'main' | 'documents' | 'logs' | 'config' | 'eval' | 'ops'>('main');
+  const [view, setView] = useState<View>('main');
   const [docsOpen, setDocsOpen] = useState(false);
   const [metricsOpen, setMetricsOpen] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [adminLoginOpen, setAdminLoginOpen] = useState(false);
   const { token: { colorBgContainer } } = theme.useToken();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
+
+  const [guestPermissions, setGuestPermissions] = useState<string[]>(['document:read:public', 'config:view', 'ops:view', 'report:view']);
+  const has = (p: string) => (user ? user.permissions : guestPermissions).includes(p);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) {
+      setAuthReady(true);
+      return;
+    }
+    const cached = getCachedUser();
+    if (cached) setUser(cached);
+    fetchMe()
+      .then((u) => { setUser(u); setAuth(token, u); })
+      .catch(() => {})
+      .finally(() => setAuthReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (user) return;
+    fetchGuestPermissions().then(setGuestPermissions).catch(() => {});
+  }, [user]);
 
   const refreshDocuments = () => {
     listDocuments().then(setDocuments).catch(console.error);
   };
 
-  useEffect(() => { refreshDocuments(); }, []);
+  useEffect(() => { refreshDocuments(); }, [user]);
+
+  useEffect(() => {
+    const onExpired = () => setUser(null);
+    window.addEventListener('auth-expired', onExpired);
+    return () => window.removeEventListener('auth-expired', onExpired);
+  }, []);
 
   useEffect(() => {
     if (!documents.some(d => d.status === 'PENDING')) return;
@@ -39,35 +76,44 @@ const App: React.FC = () => {
   }, [documents]);
 
   useEffect(() => {
+    if (!has('config:view')) return;
     fetchConfig()
       .then((c) => setRetrievalMode(c.retrieval.mode))
       .catch(() => {});
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const handleModeChange = (mode: string) => {
     setRetrievalMode(mode);
     updateRetrievalMode(mode).catch(() => {});
   };
 
-  if (view === 'documents') {
-    return <DocumentManagement onBack={() => setView('main')} />;
+  const handleLogin = (u: AuthUser) => {
+    setUser(u);
+    setLoginOpen(false);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setUser(null);
+    setView('main');
+  };
+
+  if (!authReady) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+        加载中…
+      </div>
+    );
   }
 
-  if (view === 'logs') {
-    return <LogManagement onBack={() => setView('main')} />;
-  }
-
-  if (view === 'config') {
-    return <ConfigPage onBack={() => setView('main')} onSaved={setRetrievalMode} />;
-  }
-
-  if (view === 'eval') {
-    return <EvaluationPage onBack={() => setView('main')} />;
-  }
-
-  if (view === 'ops') {
-    return <OpsPage onBack={() => setView('main')} />;
-  }
+  if (view === 'documents') return <DocumentManagement onBack={() => setView('main')} />;
+  if (view === 'logs') return <LogManagement onBack={() => setView('main')} canClear={has('log:clear')} />;
+  if (view === 'config') return <ConfigPage onBack={() => setView('main')} onSaved={setRetrievalMode} canEdit={has('config:edit')} />;
+  if (view === 'eval') return <EvaluationPage onBack={() => setView('main')} />;
+  if (view === 'ops') return <OpsPage onBack={() => setView('main')} />;
+  if (view === 'users') return <UserManagement onBack={() => setView('main')} />;
+  if (view === 'roles') return <RoleManagement onBack={() => setView('main')} />;
 
   const documentPanel = (
     <DocumentPanel
@@ -76,13 +122,21 @@ const App: React.FC = () => {
       onModeChange={handleModeChange}
       onRefresh={refreshDocuments}
       onOpenManagement={() => setView('documents')}
+      canManageDocs={has('document:manage:own') || has('document:manage:all')}
+      onRequireLogin={() => setLoginOpen(true)}
     />
   );
-  const chatPanel = <ChatPanel retrievalMode={retrievalMode} />;
-  const metricsPanel = (
+  const chatPanel = <ChatPanel retrievalMode={retrievalMode} isGuest={!user} />;
+  const canViewLogs = !!user;
+  const hasMetrics = has('report:view') || canViewLogs;
+  const metricsPanel = hasMetrics ? (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
-      <MetricsPanel />
-      <LogPanel onOpenManagement={() => setView('logs')} />
+      {has('report:view') && <MetricsPanel canClearCache={has('cache:clear')} />}
+      {canViewLogs && <LogPanel onOpenManagement={() => setView('logs')} canClear={has('log:clear')} />}
+    </div>
+  ) : (
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', padding: 24, textAlign: 'center' }}>
+      无运维指标查看权限
     </div>
   );
 
@@ -105,19 +159,59 @@ const App: React.FC = () => {
           </Button>
         )}
         <span style={{ flex: 1, textAlign: isMobile ? 'center' : 'left' }}>RAG 知识库问答系统-V2</span>
-        <Button type="text" icon={<ExperimentOutlined />} onClick={() => setView('eval')} style={{ color: '#fff' }}>
-          测评
-        </Button>
-        <Button type="text" icon={<DashboardOutlined />} onClick={() => setView('ops')} style={{ color: '#fff' }}>
-          运维
-        </Button>
-        <Button type="text" icon={<SettingOutlined />} onClick={() => setView('config')} style={{ color: '#fff' }}>
-          配置
-        </Button>
-        {isMobile && (
+        {has('evaluation:use') && (
+          <Button type="text" icon={<ExperimentOutlined />} onClick={() => setView('eval')} style={{ color: '#fff' }}>
+            测评
+          </Button>
+        )}
+        {has('ops:view') && (
+          <Button type="text" icon={<DashboardOutlined />} onClick={() => setView('ops')} style={{ color: '#fff' }}>
+            运维
+          </Button>
+        )}
+        {has('config:view') && (
+          <Button type="text" icon={<SettingOutlined />} onClick={() => setView('config')} style={{ color: '#fff' }}>
+            配置
+          </Button>
+        )}
+        {has('user:manage') && (
+          <Button type="text" icon={<TeamOutlined />} onClick={() => setView('users')} style={{ color: '#fff' }}>
+            用户
+          </Button>
+        )}
+        {has('role:manage') && (
+          <Button type="text" icon={<SafetyCertificateOutlined />} onClick={() => setView('roles')} style={{ color: '#fff' }}>
+            角色
+          </Button>
+        )}
+        {isMobile && hasMetrics && (
           <Button type="text" icon={<BarChartOutlined />} onClick={() => setMetricsOpen(true)} style={{ color: '#fff' }}>
             指标
           </Button>
+        )}
+        {!has('user:manage') && (
+          <Button type="text" icon={<ControlOutlined />} onClick={() => setAdminLoginOpen(true)} style={{ color: '#fff' }}>
+            管理
+          </Button>
+        )}
+        {user ? (
+          <Space size={8} style={{ color: '#fff', fontSize: 14 }}>
+            <span style={{ opacity: 0.9 }}>
+              <UserOutlined /> {user.displayName || user.username}{user.department ? ` · ${user.department}` : ''}
+            </span>
+            <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout} style={{ color: '#fff' }}>
+              退出
+            </Button>
+          </Space>
+        ) : (
+          <Space size={8} style={{ color: '#fff', fontSize: 14 }}>
+            <span style={{ opacity: 0.9 }}>
+              <UserOutlined /> 游客
+            </span>
+            <Button type="text" icon={<LoginOutlined />} onClick={() => setLoginOpen(true)} style={{ color: '#fff' }}>
+              登录
+            </Button>
+          </Space>
         )}
       </Header>
 
@@ -146,6 +240,9 @@ const App: React.FC = () => {
           </Panel>
         </Group>
       )}
+
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onLogin={handleLogin} />
+      <LoginModal open={adminLoginOpen} onClose={() => setAdminLoginOpen(false)} onLogin={handleLogin} adminOnly />
     </Layout>
   );
 };

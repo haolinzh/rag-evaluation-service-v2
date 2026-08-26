@@ -7,6 +7,7 @@ import type { SystemConfig, RebuildStatus } from '../types';
 interface Props {
   onBack: () => void;
   onSaved: (mode: string) => void;
+  canEdit: boolean;
 }
 
 interface FormValues {
@@ -25,6 +26,7 @@ interface FormValues {
   temperature: number;
   topP: number;
   maxTokens: number;
+  systemPrompt: string;
   vectorBackend: 'pgvector' | 'elasticsearch';
   pgIndexType: 'ivfflat' | 'hnsw';
   pgLists: number;
@@ -48,7 +50,7 @@ const rebuildPhaseLabel: Record<string, string> = {
   FAILED: '失败',
 };
 
-const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
+const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
   const [form] = Form.useForm<FormValues>();
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [saving, setSaving] = useState(false);
@@ -79,6 +81,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
           temperature: c.generation.temperature,
           topP: c.generation.topP,
           maxTokens: c.generation.maxTokens,
+          systemPrompt: c.generation.systemPrompt,
           vectorBackend: c.vector.backend,
           pgIndexType: c.vector.pgvector.indexType,
           pgLists: c.vector.pgvector.lists,
@@ -146,7 +149,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
       },
       models: { chat: v.chat, embedding: v.embedding, rerank: v.rerank },
       judge: { enabled: v.judgeEnabled, model: v.judgeModel, temperature: v.judgeTemperature },
-      generation: { temperature: v.temperature, topP: v.topP, maxTokens: v.maxTokens },
+      generation: { temperature: v.temperature, topP: v.topP, maxTokens: v.maxTokens, systemPrompt: v.systemPrompt },
       vector: {
         backend: v.vectorBackend,
         pgvector: { indexType: v.pgIndexType, lists: v.pgLists, probes: v.pgProbes, efSearch: v.pgEfSearch },
@@ -242,24 +245,26 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
       <Space style={{ marginBottom: 16 }} align="center">
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0 }}><SettingOutlined /> 系统配置</Typography.Title>
-        <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={saving}>保存</Button>
+        {canEdit && <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={saving}>保存</Button>}
       </Space>
 
-      <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false}>
+      <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false} disabled={!canEdit}>
         <Card title={<span><KeyOutlined /> API Key（阿里云百炼）</span>} size="small" style={{ marginBottom: 16 }}>
           <Typography.Text type="secondary">
             用于调用 DashScope 大模型 / Embedding。填写后即时生效；仅显示脱敏尾号，不回显完整 Key。
           </Typography.Text>
-          <Space.Compact style={{ width: '100%', marginTop: 8 }}>
-            <Input.Password
-              placeholder="sk-..."
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              style={{ maxWidth: 420 }}
-            />
-            <Button type="primary" onClick={saveApiKey} loading={savingKey}>保存 Key</Button>
-            <Button onClick={clearApiKey} disabled={!config.apiKeyMasked}>清除</Button>
-          </Space.Compact>
+          {canEdit && (
+            <Space.Compact style={{ width: '100%', marginTop: 8 }}>
+              <Input.Password
+                placeholder="sk-..."
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                style={{ maxWidth: 420 }}
+              />
+              <Button type="primary" onClick={saveApiKey} loading={savingKey}>保存 Key</Button>
+              <Button onClick={clearApiKey} disabled={!config.apiKeyMasked}>清除</Button>
+            </Space.Compact>
+          )}
           <div style={{ marginTop: 8 }}>
             <Typography.Text type="secondary">
               {config.apiKeyMasked
@@ -359,13 +364,20 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
               </Form.Item>
             </Col>
           </Row>
+          <Form.Item
+            label="系统提示词（发送给大模型）"
+            name="systemPrompt"
+            extra="检索到的文档内容会自动拼接在提示词末尾（“=== 文档内容 ===”之后），此处只需填写指令部分。"
+          >
+            <Input.TextArea rows={6} />
+          </Form.Item>
         </Card>
 
         <Card
           title={<span><DatabaseOutlined /> 向量数据库</span>}
           size="small"
           style={{ marginBottom: 16 }}
-          extra={
+          extra={canEdit ? (
             <Space>
               <Popconfirm
                 title="重建 PG 索引？"
@@ -386,7 +398,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved }) => {
                 <Button icon={<ReloadOutlined />} loading={!!rebuildStatus?.running}>重建向量索引</Button>
               </Popconfirm>
             </Space>
-          }
+          ) : null}
         >
           <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
             双写 pgvector 与 Elasticsearch。「当前向量后端」决定实际用于语义检索的后端，保存后立即切换（双写，无需重新入库）；下方两个参数区分别配置各自后端。索引类型 / lists 等建索引参数改动后点击「重建 PG 索引」即可（仅重建 pgvector 索引，无需重新向量化）；embedding 维度变化等才需点击「重建向量索引」全量重新入库。

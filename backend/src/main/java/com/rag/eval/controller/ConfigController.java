@@ -5,6 +5,7 @@ import com.rag.eval.service.ConfigService;
 import com.rag.eval.service.RebuildService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
@@ -77,6 +78,7 @@ public class ConfigController {
         return buildDto();
     }
 
+    @PreAuthorize("hasAuthority('config:edit')")
     @PutMapping
     public ResponseEntity<?> update(@RequestBody SystemConfigDto dto) {
         String error = validate(dto);
@@ -110,6 +112,9 @@ public class ConfigController {
         changes.put(K_GEN_TEMPERATURE, String.valueOf(g.temperature()));
         changes.put(K_GEN_TOP_P, String.valueOf(g.topP()));
         changes.put(K_GEN_MAX_TOKENS, String.valueOf(g.maxTokens()));
+        String sysPrompt = g.systemPrompt();
+        changes.put(ConfigService.KEY_SYSTEM_PROMPT,
+            (sysPrompt == null || sysPrompt.isBlank()) ? ConfigService.DEFAULT_SYSTEM_PROMPT : sysPrompt);
         if (v != null) {
             changes.put(K_VECTOR_BACKEND, v.backend());
             changes.put(K_PG_INDEX_TYPE, v.pgvector().indexType());
@@ -128,6 +133,7 @@ public class ConfigController {
         return ResponseEntity.ok(buildDto());
     }
 
+    @PreAuthorize("hasAuthority('config:edit')")
     @PutMapping("/mode")
     public ResponseEntity<?> updateMode(@RequestBody Map<String, String> body) {
         String mode = body == null ? null : body.get("mode");
@@ -138,6 +144,7 @@ public class ConfigController {
         return ResponseEntity.ok(buildDto());
     }
 
+    @PreAuthorize("hasAuthority('config:edit')")
     @PutMapping("/apikey")
     public ResponseEntity<?> updateApiKey(@RequestBody(required = false) Map<String, String> body) {
         String apiKey = body == null ? null : body.get("apiKey");
@@ -149,6 +156,7 @@ public class ConfigController {
         return ResponseEntity.ok(buildDto());
     }
 
+    @PreAuthorize("hasAuthority('config:edit')")
     @PostMapping("/rebuild-vector-index")
     public ResponseEntity<?> rebuildVectorIndex() {
         try {
@@ -159,6 +167,7 @@ public class ConfigController {
         }
     }
 
+    @PreAuthorize("hasAuthority('config:edit')")
     @PostMapping("/rebuild-pg-index")
     public ResponseEntity<?> rebuildPgIndex() {
         try {
@@ -205,7 +214,8 @@ public class ConfigController {
             new SystemConfigDto.Generation(
                 config.getDouble(K_GEN_TEMPERATURE, 0.3),
                 config.getDouble(K_GEN_TOP_P, 1.0),
-                config.getInt(K_GEN_MAX_TOKENS, 0)),
+                config.getInt(K_GEN_MAX_TOKENS, 0),
+                config.get(ConfigService.KEY_SYSTEM_PROMPT, ConfigService.DEFAULT_SYSTEM_PROMPT)),
             new SystemConfigDto.Vector(
                 config.get(K_VECTOR_BACKEND, "pgvector"),
                 new SystemConfigDto.Pgvector(

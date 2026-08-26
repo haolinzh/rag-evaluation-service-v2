@@ -13,9 +13,10 @@ const statusColor: Record<string, string> = {
 
 interface Props {
   onOpenManagement: () => void;
+  canClear: boolean;
 }
 
-const LogPanel: React.FC<Props> = ({ onOpenManagement }) => {
+const LogPanel: React.FC<Props> = ({ onOpenManagement, canClear }) => {
   const [logs, setLogs] = useState<RequestLog[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -55,6 +56,14 @@ const LogPanel: React.FC<Props> = ({ onOpenManagement }) => {
       render: (v: string) => v?.replace('T', ' ').slice(5, 16),
     },
     {
+      title: '用户',
+      dataIndex: 'ownerUsername',
+      key: 'ownerUsername',
+      width: 90,
+      ellipsis: true,
+      render: (v: string | null) => v || '—',
+    },
+    {
       title: '模式',
       dataIndex: 'retrievalMode',
       key: 'retrievalMode',
@@ -84,9 +93,11 @@ const LogPanel: React.FC<Props> = ({ onOpenManagement }) => {
         <Space size={4}>
           <Button type="text" size="small" icon={<ReloadOutlined />} onClick={() => refresh()} loading={loading}>刷新</Button>
           <Button type="text" size="small" icon={<FolderOpenOutlined />} onClick={onOpenManagement}>详情</Button>
-          <Popconfirm title="确定清空所有日志？" onConfirm={handleClear} okText="清空" cancelText="取消">
-            <Button type="text" size="small" danger icon={<DeleteOutlined />}>清空</Button>
-          </Popconfirm>
+          {canClear && (
+            <Popconfirm title="确定清空所有日志？" onConfirm={handleClear} okText="清空" cancelText="取消">
+              <Button type="text" size="small" danger icon={<DeleteOutlined />}>清空</Button>
+            </Popconfirm>
+          )}
         </Space>
       </div>
 
@@ -97,7 +108,7 @@ const LogPanel: React.FC<Props> = ({ onOpenManagement }) => {
         dataSource={logs}
         loading={loading}
         pagination={{ pageSize: 15, size: 'small', showSizeChanger: false }}
-        scroll={{ x: 340 }}
+        scroll={{ x: 430 }}
       />
     </div>
   );

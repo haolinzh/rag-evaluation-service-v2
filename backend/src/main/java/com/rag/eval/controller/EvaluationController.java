@@ -10,6 +10,7 @@ import com.rag.eval.service.EvaluationQuestionService;
 import com.rag.eval.service.EvaluationService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -20,6 +21,7 @@ import java.util.concurrent.Executors;
 
 @RestController
 @RequestMapping("/api/evaluation")
+@PreAuthorize("hasAuthority('evaluation:use')")
 public class EvaluationController {
 
     private final EvaluationService evaluationService;

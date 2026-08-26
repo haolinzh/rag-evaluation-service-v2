@@ -230,7 +230,7 @@ public class EvaluationService {
 
     private EvaluationQuestionResult evaluateOne(EvaluationQuestion q, String mode, Embedder embedder, JudgeConfig judge) {
         long start = System.currentTimeMillis();
-        ChatResponse resp = chatService.ask(q.getQuestion(), "eval-" + mode + "-" + q.getId(), mode);
+        ChatResponse resp = chatService.ask(q.getQuestion(), "eval-" + mode + "-" + q.getId(), mode, null);
         double latencyMs = System.currentTimeMillis() - start;
 
         List<String> snippets = resp.getSources() == null ? List.of()

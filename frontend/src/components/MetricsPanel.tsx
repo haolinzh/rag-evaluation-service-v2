@@ -4,7 +4,11 @@ import { DownloadOutlined, ReloadOutlined, ClearOutlined } from '@ant-design/ico
 import { fetchReport, fetchMetricsSummary, clearCache } from '../api';
 import type { OpsReport } from '../types';
 
-const MetricsPanel: React.FC = () => {
+interface Props {
+  canClearCache: boolean;
+}
+
+const MetricsPanel: React.FC<Props> = ({ canClearCache }) => {
   const [metrics, setMetrics] = useState<OpsReport>({
     totalRequests: 0,
     p50LatencyMs: 0,
@@ -74,7 +78,9 @@ const MetricsPanel: React.FC = () => {
         <Space size={4}>
           <Button size="small" type="text" icon={<ReloadOutlined />} onClick={refresh}>刷新</Button>
           <Button size="small" type="text" icon={<DownloadOutlined />} onClick={handleDownload}>下载 CSV</Button>
-          <Button size="small" type="text" icon={<ClearOutlined />} onClick={handleClearCache}>清空缓存</Button>
+          {canClearCache && (
+            <Button size="small" type="text" icon={<ClearOutlined />} onClick={handleClearCache}>清空缓存</Button>
+          )}
         </Space>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 12px' }}>

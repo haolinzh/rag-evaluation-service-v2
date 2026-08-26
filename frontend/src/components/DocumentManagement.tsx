@@ -28,7 +28,18 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [editingDoc, setEditingDoc] = useState<DocumentMeta | null>(null);
   const [editForm, setEditForm] = useState<ChunkConfig>({ splitMode: 'size', chunkSize: 1000, delimiter: '', overlap: 150 });
+  const [editVisibility, setEditVisibility] = useState<'PUBLIC' | 'DEPARTMENT' | 'EXECUTIVE' | 'PRIVATE'>('DEPARTMENT');
   const [saving, setSaving] = useState(false);
+
+  const VISIBILITY_OPTIONS = [
+    { value: 'PUBLIC', label: '所有人可见' },
+    { value: 'DEPARTMENT', label: '本部门可见' },
+    { value: 'EXECUTIVE', label: '高管可见' },
+    { value: 'PRIVATE', label: '仅作者可见' },
+  ];
+  const visibilityColor: Record<string, string> = {
+    PUBLIC: 'green', DEPARTMENT: 'blue', EXECUTIVE: 'gold', PRIVATE: 'red',
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -70,13 +81,14 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
       delimiter: doc.delimiter ?? '',
       overlap: doc.overlap ?? 150,
     });
+    setEditVisibility(doc.visibility || 'DEPARTMENT');
   };
 
   const handleSave = async () => {
     if (!editingDoc) return;
     setSaving(true);
     try {
-      await reprocessDocument(editingDoc.id, editForm);
+      await reprocessDocument(editingDoc.id, editForm, editVisibility);
       message.success('已提交重切分，后台处理中');
       setEditingDoc(null);
       refresh();
@@ -100,6 +112,18 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
           : <Tag color="success">已就绪</Tag>,
       sorter: (a: DocumentMeta, b: DocumentMeta) => (a.status ?? '').localeCompare(b.status ?? ''),
     },
+    {
+      title: '可见性', dataIndex: 'visibility', key: 'visibility', width: 110,
+      render: (v?: DocumentMeta['visibility']) => v
+        ? <Tag color={visibilityColor[v]}>{VISIBILITY_OPTIONS.find(o => o.value === v)?.label || v}</Tag>
+        : '—',
+      sorter: (a: DocumentMeta, b: DocumentMeta) => (a.visibility ?? '').localeCompare(b.visibility ?? ''),
+    },
+    {
+      title: '作者', dataIndex: 'ownerName', key: 'ownerName', width: 130,
+      render: (v?: string, r?: DocumentMeta) => v
+        ? `${v}${r?.ownerDepartment ? ` (${r.ownerDepartment})` : ''}` : '—',
+    },
     { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 160, render: (v: string) => formatTime(v), sorter: (a: DocumentMeta, b: DocumentMeta) => (a.updatedAt ?? '').localeCompare(b.updatedAt ?? '') },
     {
       title: 'Chunk 方式', key: 'splitMode', width: 120,
@@ -120,7 +144,7 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
         <Space size={4}>
           <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>预览</Button>
           <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>重切分</Button>
-          <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadDocument(r.id)}>下载</Button>
+          <Button size="small" icon={<DownloadOutlined />} onClick={() => { downloadDocument(r.id).catch(() => message.error('下载失败')); }}>下载</Button>
         </Space>
       ),
     },
@@ -139,7 +163,7 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
         columns={columns}
         loading={loading}
         pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 个文档` }}
-        scroll={{ x: 1480, y: 'calc(100vh - 220px)' }}
+        scroll={{ x: 1720, y: 'calc(100vh - 220px)' }}
       />
 
       <Modal
@@ -152,6 +176,15 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
         confirmLoading={saving}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>可见性</div>
+            <Select
+              value={editVisibility}
+              onChange={(v) => setEditVisibility(v as 'PUBLIC' | 'DEPARTMENT' | 'EXECUTIVE' | 'PRIVATE')}
+              style={{ width: '100%' }}
+              options={VISIBILITY_OPTIONS}
+            />
+          </div>
           <div>
             <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>切分方式</div>
             <Select
