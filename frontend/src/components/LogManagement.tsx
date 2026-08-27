@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Typography, Tag, Space, Descriptions, message, Popconfirm } from 'antd';
+import { Table, Button, Typography, Tag, Space, Descriptions, message, Popconfirm, Steps } from 'antd';
 import { ArrowLeftOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { fetchLogs, clearLogs } from '../api';
@@ -86,6 +86,44 @@ const renderChunks = (json?: string | null) => {
   );
 };
 
+const renderPipeline = (r: RequestLog) => {
+  if (r.cacheHit) {
+    return <div style={{ marginBottom: 12, color: '#888', fontSize: 12 }}>语义缓存命中，跳过检索流水线</div>;
+  }
+  const finalChunks = parseChunks(r.retrievedChunks);
+  const webCount = finalChunks.filter((c) => c.source === 'web').length;
+  const rerankCandidates = parseChunks(r.rerankCandidates);
+  const finalNonWeb = finalChunks.length - webCount;
+
+  const steps: { title: string; description: string }[] = [];
+  if (r.retrievalMode === 'vector') {
+    steps.push({ title: '向量召回', description: `${r.vectorCount} 条` });
+  } else {
+    steps.push({
+      title: '并行召回',
+      description: `关键词 ${r.keywordCount} · 向量 ${r.vectorCount} · 重叠 ${r.overlapCount}`,
+    });
+    if (r.retrievalMode === 'hybrid-rerank') {
+      steps.push({ title: 'RRF 融合', description: `${rerankCandidates.length} 候选` });
+      steps.push({ title: '精排', description: `top ${finalNonWeb}` });
+    } else {
+      steps.push({ title: 'RRF 融合', description: `top ${finalNonWeb}` });
+    }
+  }
+  if (webCount > 0) {
+    steps.push({ title: '联网补充', description: `+${webCount} 条` });
+  }
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <Steps size="small" current={steps.length} items={steps} />
+      <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
+        最终 {finalChunks.length} chunks{webCount > 0 ? `（含联网 ${webCount} 条）` : ''}
+      </div>
+    </div>
+  );
+};
+
 const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
   const [logs, setLogs] = useState<RequestLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -154,7 +192,9 @@ const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
         scroll={{ x: 1200, y: 'calc(100vh - 220px)' }}
         expandable={{
           expandedRowRender: (r) => (
-            <Descriptions size="small" column={2} bordered>
+            <>
+              {renderPipeline(r)}
+              <Descriptions size="small" column={2} bordered>
               <Descriptions.Item label="请求 ID" span={2}>{r.requestId}</Descriptions.Item>
               <Descriptions.Item label="Session">{r.sessionId}</Descriptions.Item>
               <Descriptions.Item label="模型">{r.model}</Descriptions.Item>
@@ -191,6 +231,7 @@ const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
               <Descriptions.Item label="最高 chunk 分">{r.maxChunkScore.toFixed(3)}</Descriptions.Item>
               <Descriptions.Item label="PII 脱敏数">{r.piiRedactions}</Descriptions.Item>
             </Descriptions>
+            </>
           ),
           rowExpandable: () => true,
         }}
