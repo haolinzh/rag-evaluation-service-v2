@@ -290,7 +290,8 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
 |---|---|
 | 后端框架 | Spring Boot 3.4.1 (Java 17) |
 | 认证鉴权 | Spring Security 6（BCrypt + Bearer Token 无状态会话 + `@PreAuthorize` 方法级权限） |
-| 大模型 | 阿里云百炼 DashScope：`qwen-turbo` (对话) + `text-embedding-v3` (向量) + `qwen3-rerank` (精排)；对话可切换 `qwen-plus` / `qwen-max` / `deepseek-r1` 等模型 |
+| AI 框架 | Spring AI Alibaba（`spring-ai-alibaba-starter-dashscope`）：`ChatModel` / `EmbeddingModel` 统一抽象，运行时按配置懒重建以支持热换 API Key / 模型 |
+| 大模型 | 阿里云百炼 DashScope：`qwen-turbo` (对话) + `text-embedding-v3` (向量，锁定 1024 维) + `qwen3-rerank` (精排)；对话可切换 `qwen-plus` / `qwen-max` / `deepseek-r1` 等模型 |
 | 关键词检索 | Elasticsearch 8.13.4（BM25 `match`） |
 | 向量数据库 | PostgreSQL 16 + pgvector（cosine `<=>` 操作符）与 Elasticsearch dense_vector（kNN），**运行时可切换** |
 | 缓存 | Redis 7 |
@@ -322,7 +323,7 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
                          │       └─ hybrid-rerank: RRF ──▶ Rerank   │
                          │  3. SafetyService.evaluate()  允许/拒答  │
                          │  4. SemanticCacheService.lookup()        │
-                         │  5. DashScope (qwen-turbo) 生成          │
+                         │  5. Spring AI ChatModel 生成            │
                          │  6. PIIRedactionService.redact()         │
                          │  7. 保存历史 + 采集指标 + 写请求日志     │
                          └───────┬──────────┬──────────┬───────────┘
@@ -365,7 +366,8 @@ rag-evaluation-service/
 │       │   ├── controller/         # Chat / Document / Report / Log / Cache / Config / Evaluation / Auth
 │       │   ├── model/              # DTO + JPA 实体（含 RequestLog / AppUser / Role / Permission）
 │       │   ├── repository/         # JPA + JDBC(pgvector 原生 SQL)（含 UserRepo / RoleRepo / PermissionRepo）
-│       │   ├── service/            # 检索(VectorStore 策略)/重排/安全/脱敏/缓存/指标/报告/评测/重建/语料/Auth/Authorization/Token
+│       │   ├── service/            # 检索(VectorStore 适配器)/重排/安全/脱敏/缓存/指标/报告/评测/重建/语料/Auth/Authorization/Token
+│       │   │   └── hybrid/         # DataAgent 混合检索（FusionStrategy/RrfFusionStrategy/HybridRetrievalStrategy）
 │       │   └── pipeline/           # 入库管道（解析/分块/索引）
 │       ├── main/resources/
 │       │   ├── application.yml
@@ -488,6 +490,8 @@ retrieval:
 ```
 
 「向量语义检索」这一路的具体后端由 `vector.backend`（`pgvector` / `elasticsearch`）决定，与检索模式正交——三种模式下的「向量」都会路由到所选后端。入库时 embedding 双写两库，切换后端即时生效；索引类型 / lists 等建索引参数改动后需点「重建向量索引」。
+
+检索链基于 Spring AI 的 `VectorStore` 抽象（`PgVectorVectorStore` / `ElasticsearchVectorStore` 两个适配器）+ 移植自 Spring AI Alibaba DataAgent 的混合检索范式（`service/hybrid/` 包：`FusionStrategy` / `RrfFusionStrategy` / `AbstractHybridRetrievalStrategy`）。关键词与向量两路通过 `CompletableFuture` 并行召回，`RrfFusionStrategy`（k=60）以 `Document` 为载体融合排序，`hybrid-rerank` 再叠加自有 `RerankService` 精排（DataAgent 原范式不含精排）。
 
 ### 6. PDF Chunk 策略
 

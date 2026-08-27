@@ -1,38 +1,56 @@
 package com.rag.eval.service;
 
-import com.alibaba.dashscope.embeddings.TextEmbedding;
-import com.alibaba.dashscope.embeddings.TextEmbeddingParam;
-import com.alibaba.dashscope.embeddings.TextEmbeddingResult;
-import com.alibaba.dashscope.exception.NoApiKeyException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
+import com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingModel;
+import com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingOptions;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.document.MetadataMode;
+import org.springframework.ai.embedding.Embedding;
+import org.springframework.ai.embedding.EmbeddingRequest;
+import org.springframework.ai.embedding.EmbeddingResponse;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 
 @Service
 public class DashScopeService {
 
-    private static final String TEXT_GEN_URL =
-        "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation";
+    private static final String DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com";
+    private static final String METADATA_REASONING_CONTENT = "reasoningContent";
 
     private final ConfigService config;
-    private final ObjectMapper objectMapper;
+    private final DashScopeChatModel baseChatModel;
+    private final DashScopeEmbeddingModel baseEmbeddingModel;
+    private final RestClient.Builder restClientBuilder;
+    private final WebClient.Builder webClientBuilder;
 
-    public DashScopeService(ConfigService config, ObjectMapper objectMapper) {
+    private volatile String cachedApiKey;
+    private volatile DashScopeChatModel chatModel;
+    private volatile DashScopeEmbeddingModel embeddingModel;
+
+    public DashScopeService(ConfigService config,
+                            DashScopeChatModel baseChatModel,
+                            DashScopeEmbeddingModel baseEmbeddingModel,
+                            RestClient.Builder restClientBuilder,
+                            WebClient.Builder webClientBuilder) {
         this.config = config;
-        this.objectMapper = objectMapper;
+        this.baseChatModel = baseChatModel;
+        this.baseEmbeddingModel = baseEmbeddingModel;
+        this.restClientBuilder = restClientBuilder;
+        this.webClientBuilder = webClientBuilder;
+        this.chatModel = baseChatModel;
+        this.embeddingModel = baseEmbeddingModel;
     }
 
     public record ChatResult(String content, String thinking, int promptTokens, int completionTokens) {}
@@ -60,58 +78,134 @@ public class DashScopeService {
     private ChatResult generate(String model, double temperature, double topP, int maxTokens,
                                 String systemPrompt, String userMessage) {
         try {
-            String apiKey = resolveApiKey();
+            refreshModels(resolveApiKey());
+            DashScopeChatOptions options = chatOptions(model, temperature, topP, maxTokens);
+            Prompt prompt = new Prompt(List.of(new SystemMessage(systemPrompt), new UserMessage(userMessage)), options);
 
-            List<Map<String, String>> messages = List.of(
-                Map.of("role", "system", "content", systemPrompt),
-                Map.of("role", "user", "content", userMessage)
-            );
-            Map<String, Object> parameters = new LinkedHashMap<>();
-            parameters.put("result_format", "message");
-            parameters.put("temperature", temperature);
-            if (topP < 1.0) {
-                parameters.put("top_p", topP);
-            }
-            if (maxTokens > 0) {
-                parameters.put("max_tokens", maxTokens);
-            }
+            ChatResponse response = chatModel.call(prompt);
+            AssistantMessage message = response.getResult() != null ? response.getResult().getOutput() : null;
+            String content = message != null && message.getText() != null ? message.getText() : "";
+            String thinking = metadataReasoning(message);
 
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("model", model);
-            body.put("input", Map.of("messages", messages));
-            body.put("parameters", parameters);
-
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(TEXT_GEN_URL))
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
-                .build();
-
-            HttpResponse<String> response = HttpClient.newHttpClient()
-                .send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                throw new RuntimeException("DashScope HTTP " + response.statusCode() + ": " + response.body());
-            }
-
-            JsonNode root = objectMapper.readTree(response.body());
-            String content = "";
-            String thinking = "";
-            JsonNode choices = root.path("output").path("choices");
-            if (choices.isArray() && !choices.isEmpty()) {
-                JsonNode message = choices.get(0).path("message");
-                content = message.path("content").asText("");
-                thinking = message.path("reasoning_content").asText("");
-            }
-            JsonNode usage = root.path("usage");
-            int promptTokens = usage.path("input_tokens").asInt(0);
-            int completionTokens = usage.path("output_tokens").asInt(0);
+            Usage usage = response.getMetadata() != null ? response.getMetadata().getUsage() : null;
+            int promptTokens = usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+            int completionTokens = usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
 
             return new ChatResult(content, thinking, promptTokens, completionTokens);
         } catch (Exception e) {
             throw new RuntimeException("DashScope chat failed: " + e.getMessage(), e);
         }
+    }
+
+    public ChatResult chatStream(String systemPrompt, String userMessage,
+                                 Consumer<String> onThinking, Consumer<String> onContent) {
+        try {
+            refreshModels(resolveApiKey());
+            DashScopeChatOptions options = chatOptions(getChatModel(),
+                config.getDouble("generation.temperature", 0.3),
+                config.getDouble("generation.top-p", 1.0),
+                config.getInt("generation.max-tokens", 0));
+            options.setIncrementalOutput(true);
+
+            Prompt prompt = new Prompt(List.of(new SystemMessage(systemPrompt), new UserMessage(userMessage)), options);
+
+            StringBuilder thinkingBuf = new StringBuilder();
+            StringBuilder contentBuf = new StringBuilder();
+            int[] tokens = {0, 0};
+
+            chatModel.stream(prompt).toStream().forEach(chunk -> {
+                if (chunk.getResult() == null) return;
+                AssistantMessage message = chunk.getResult().getOutput();
+                if (message == null) return;
+                String thinking = metadataReasoning(message);
+                String text = message.getText();
+                if (thinking != null && !thinking.isEmpty()) {
+                    thinkingBuf.append(thinking);
+                    onThinking.accept(thinking);
+                }
+                if (text != null && !text.isEmpty()) {
+                    contentBuf.append(text);
+                    onContent.accept(text);
+                }
+                Usage usage = chunk.getMetadata() != null ? chunk.getMetadata().getUsage() : null;
+                if (usage != null) {
+                    if (usage.getPromptTokens() != null) tokens[0] = usage.getPromptTokens();
+                    if (usage.getCompletionTokens() != null) tokens[1] = usage.getCompletionTokens();
+                }
+            });
+
+            return new ChatResult(contentBuf.toString(), thinkingBuf.toString(), tokens[0], tokens[1]);
+        } catch (Exception e) {
+            throw new RuntimeException("DashScope stream failed: " + e.getMessage(), e);
+        }
+    }
+
+    private DashScopeChatOptions chatOptions(String model, double temperature, double topP, int maxTokens) {
+        DashScopeChatOptions.DashscopeChatOptionsBuilder builder =
+            DashScopeChatOptions.builder().withModel(model).withTemperature(temperature);
+        if (topP < 1.0) {
+            builder.withTopP(topP);
+        }
+        if (maxTokens > 0) {
+            builder.withMaxToken(maxTokens);
+        }
+        return builder.build();
+    }
+
+    private String metadataReasoning(AssistantMessage message) {
+        if (message == null || message.getMetadata() == null) return "";
+        Object reasoning = message.getMetadata().get(METADATA_REASONING_CONTENT);
+        return reasoning != null ? reasoning.toString() : "";
+    }
+
+    public List<Double> embed(String text) {
+        try {
+            refreshModels(resolveApiKey());
+            EmbeddingResponse response = embeddingModel.call(
+                new EmbeddingRequest(List.of(text), embeddingOptions()));
+            List<Embedding> embeddings = response.getResults();
+            if (embeddings == null || embeddings.isEmpty()) return List.of();
+            return toDoubles(embeddings.get(0).getOutput());
+        } catch (Exception e) {
+            throw new RuntimeException("DashScope embedding failed: " + e.getMessage(), e);
+        }
+    }
+
+    public List<List<Double>> embedBatch(List<String> texts) {
+        try {
+            refreshModels(resolveApiKey());
+            List<List<Double>> all = new ArrayList<>();
+            // DashScope text-embedding-v3 rejects batches larger than 10
+            int batchSize = 10;
+            for (int i = 0; i < texts.size(); i += batchSize) {
+                int end = Math.min(i + batchSize, texts.size());
+                List<String> batch = texts.subList(i, end);
+                EmbeddingResponse response = embeddingModel.call(
+                    new EmbeddingRequest(batch, embeddingOptions()));
+                List<Embedding> embeddings = response.getResults();
+                if (embeddings == null) continue;
+                for (Embedding e : embeddings) {
+                    all.add(toDoubles(e.getOutput()));
+                }
+            }
+            return all;
+        } catch (Exception e) {
+            throw new RuntimeException("DashScope embedding failed: " + e.getMessage(), e);
+        }
+    }
+
+    private DashScopeEmbeddingOptions embeddingOptions() {
+        DashScopeEmbeddingOptions options = new DashScopeEmbeddingOptions();
+        options.setModel(config.get("dashscope.embedding-model", "text-embedding-v3"));
+        options.setDimensions(1024);
+        return options;
+    }
+
+    private List<Double> toDoubles(float[] vector) {
+        if (vector == null) return List.of();
+        List<Double> result = new ArrayList<>(vector.length);
+        for (float f : vector) result.add((double) f);
+        return result;
     }
 
     private String resolveApiKey() {
@@ -125,126 +219,21 @@ public class DashScopeService {
         return apiKey;
     }
 
-    public ChatResult chatStream(String systemPrompt, String userMessage,
-                                 Consumer<String> onThinking, Consumer<String> onContent) {
-        try {
-            String apiKey = resolveApiKey();
-
-            List<Map<String, String>> messages = List.of(
-                Map.of("role", "system", "content", systemPrompt),
-                Map.of("role", "user", "content", userMessage)
-            );
-            Map<String, Object> parameters = new LinkedHashMap<>();
-            parameters.put("result_format", "message");
-            parameters.put("incremental_output", true);
-            parameters.put("temperature", config.getDouble("generation.temperature", 0.3));
-            double topP = config.getDouble("generation.top-p", 1.0);
-            if (topP < 1.0) {
-                parameters.put("top_p", topP);
-            }
-            int maxTokens = config.getInt("generation.max-tokens", 0);
-            if (maxTokens > 0) {
-                parameters.put("max_tokens", maxTokens);
-            }
-
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("model", getChatModel());
-            body.put("input", Map.of("messages", messages));
-            body.put("parameters", parameters);
-
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(TEXT_GEN_URL))
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json")
-                .header("X-DashScope-SSE", "enable")
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
-                .build();
-
-            HttpResponse<java.io.InputStream> response = HttpClient.newHttpClient()
-                .send(request, HttpResponse.BodyHandlers.ofInputStream());
-
-            if (response.statusCode() != 200) {
-                String err = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
-                throw new RuntimeException("DashScope HTTP " + response.statusCode() + ": " + err);
-            }
-
-            StringBuilder thinkingBuf = new StringBuilder();
-            StringBuilder contentBuf = new StringBuilder();
-            int promptTokens = 0;
-            int completionTokens = 0;
-
-            BufferedReader reader = new BufferedReader(
-                new InputStreamReader(response.body(), StandardCharsets.UTF_8));
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (!line.startsWith("data:")) continue;
-                String json = line.substring(5).trim();
-                if (json.isEmpty() || "[DONE]".equals(json)) continue;
-                JsonNode root = objectMapper.readTree(json);
-                JsonNode choices = root.path("output").path("choices");
-                if (choices.isArray() && !choices.isEmpty()) {
-                    JsonNode msg = choices.get(0).path("message");
-                    String reasoning = msg.path("reasoning_content").asText("");
-                    String content = msg.path("content").asText("");
-                    if (!reasoning.isEmpty()) {
-                        thinkingBuf.append(reasoning);
-                        onThinking.accept(reasoning);
-                    }
-                    if (!content.isEmpty()) {
-                        contentBuf.append(content);
-                        onContent.accept(content);
-                    }
-                }
-                JsonNode usage = root.path("usage");
-                if (!usage.isMissingNode()) {
-                    promptTokens = usage.path("input_tokens").asInt(promptTokens);
-                    completionTokens = usage.path("output_tokens").asInt(completionTokens);
-                }
-            }
-
-            return new ChatResult(contentBuf.toString(), thinkingBuf.toString(),
-                promptTokens, completionTokens);
-        } catch (Exception e) {
-            throw new RuntimeException("DashScope stream failed: " + e.getMessage(), e);
-        }
-    }
-
-    public List<Double> embed(String text) {
-        try {
-            TextEmbeddingParam param = TextEmbeddingParam.builder()
-                .apiKey(resolveApiKey())
-                .model(config.get("dashscope.embedding-model", "text-embedding-v3"))
-                .texts(List.of(text))
-                .build();
-            TextEmbeddingResult result = new TextEmbedding().call(param);
-            var embeddings = result.getOutput().getEmbeddings();
-            if (embeddings == null || embeddings.isEmpty()) return List.of();
-            List<Double> vec = new ArrayList<>();
-            for (Double d : embeddings.get(0).getEmbedding()) vec.add(d);
-            return vec;
-        } catch (NoApiKeyException e) {
-            throw new RuntimeException("DASHSCOPE_API_KEY not set", e);
-        }
-    }
-
-    public List<List<Double>> embedBatch(List<String> texts) {
-        try {
-            TextEmbeddingParam param = TextEmbeddingParam.builder()
-                .apiKey(resolveApiKey())
-                .model(config.get("dashscope.embedding-model", "text-embedding-v3"))
-                .texts(texts)
-                .build();
-            TextEmbeddingResult result = new TextEmbedding().call(param);
-            var embeddings = result.getOutput().getEmbeddings();
-            if (embeddings == null) return List.of();
-            return embeddings.stream().map(e -> {
-                List<Double> vec = new ArrayList<>();
-                for (Double d : e.getEmbedding()) vec.add(d);
-                return vec;
-            }).toList();
-        } catch (NoApiKeyException e) {
-            throw new RuntimeException("DASHSCOPE_API_KEY not set", e);
-        }
+    /** Rebuild the DashScope models when the resolved API key changes at runtime,
+     *  preserving the original behaviour of reading {@code dashscope.api-key} from the
+     *  config page / {@code system_config} table. Model/temperature/top-p/max-tokens are
+     *  still overridden per-request via options, so only the key triggers a rebuild. */
+    private synchronized void refreshModels(String apiKey) {
+        if (apiKey.equals(cachedApiKey)) return;
+        DashScopeApi api = DashScopeApi.builder()
+            .apiKey(apiKey)
+            .baseUrl(DEFAULT_BASE_URL)
+            .restClientBuilder(restClientBuilder)
+            .webClientBuilder(webClientBuilder)
+            .build();
+        this.chatModel = baseChatModel.mutate().dashScopeApi(api).build();
+        this.embeddingModel = new DashScopeEmbeddingModel(api, MetadataMode.NONE, embeddingOptions());
+        this.cachedApiKey = apiKey;
     }
 
     public static String embeddingToString(List<Double> embedding) {

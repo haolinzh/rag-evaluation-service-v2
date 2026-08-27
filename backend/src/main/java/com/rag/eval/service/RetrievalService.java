@@ -1,44 +1,40 @@
 package com.rag.eval.service;
 
 import com.rag.eval.model.SearchResult;
+import com.rag.eval.service.hybrid.DocumentSupport;
+import com.rag.eval.service.hybrid.HybridRetrievalStrategy;
+import com.rag.eval.service.hybrid.HybridSearchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.Map;
 
 import static net.logstash.logback.argument.StructuredArguments.entries;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 @Service
 public class RetrievalService {
 
     private static final Logger log = LoggerFactory.getLogger(RetrievalService.class);
 
-    private final ElasticsearchService esService;
-    private final Map<String, VectorStore> vectorStores;
-    private final RRFusionService rrfService;
+    private final Map<String, DenseVectorStore> vectorStores;
+    private final HybridRetrievalStrategy hybridStrategy;
     private final RerankService rerankService;
     private final DashScopeService dashScope;
     private final ConfigService config;
 
-    public RetrievalService(ElasticsearchService esService,
-                            Map<String, VectorStore> vectorStores,
-                            RRFusionService rrfService,
+    public RetrievalService(Map<String, DenseVectorStore> vectorStores,
+                            HybridRetrievalStrategy hybridStrategy,
                             RerankService rerankService,
                             DashScopeService dashScope,
                             ConfigService config) {
-        this.esService = esService;
         this.vectorStores = vectorStores;
-        this.rrfService = rrfService;
+        this.hybridStrategy = hybridStrategy;
         this.rerankService = rerankService;
         this.dashScope = dashScope;
         this.config = config;
@@ -56,8 +52,11 @@ public class RetrievalService {
 
         if ("vector".equals(effectiveMode)) {
             Instant vectorStart = Instant.now();
-            List<SearchResult> results = semanticSearch(queryEmb, topK);
+            List<Document> docs = denseStore().searchByEmbedding(queryEmb, topK, similarityThreshold());
             long vectorLatencyMs = Duration.between(vectorStart, Instant.now()).toMillis();
+            List<SearchResult> results = docs.stream()
+                .map(d -> DocumentSupport.toSearchResult(d, "semantic"))
+                .toList();
             logRetrieval(effectiveMode, 0, results.size(), 0, embeddingLatencyMs, 0, vectorLatencyMs, 0, results);
             return new RetrievalResult(results, List.of(), 0, results.size(), 0,
                 embeddingLatencyMs, 0, vectorLatencyMs, 0);
@@ -65,44 +64,32 @@ public class RetrievalService {
 
         // Hybrid + hybrid-rerank share the parallel keyword + semantic recall
         int recallSize = Math.max(topK * recallMultiplier, 30);
-        AtomicLong keywordLatency = new AtomicLong();
-        AtomicLong vectorLatency = new AtomicLong();
+        int fusionTopK = "hybrid-rerank".equals(effectiveMode) ? rerankCandidates : topK;
 
-        CompletableFuture<List<SearchResult>> keywordFuture =
-            CompletableFuture.supplyAsync(() -> {
-                Instant s = Instant.now();
-                List<SearchResult> r = esService.keywordSearch(query, recallSize);
-                keywordLatency.set(Duration.between(s, Instant.now()).toMillis());
-                return r;
-            });
-        CompletableFuture<List<SearchResult>> vectorFuture =
-            CompletableFuture.supplyAsync(() -> {
-                Instant s = Instant.now();
-                List<SearchResult> r = semanticSearch(queryEmb, recallSize);
-                vectorLatency.set(Duration.between(s, Instant.now()).toMillis());
-                return r;
-            });
+        HybridSearchRequest request =
+            new HybridSearchRequest(query, fusionTopK, recallSize, similarityThreshold(), queryEmb);
+        HybridRetrievalStrategy.HybridRetrievalResult hybrid = hybridStrategy.retrieve(request);
 
-        List<SearchResult> keywordResults = keywordFuture.join();
-        List<SearchResult> vectorResults = vectorFuture.join();
-        int overlap = overlapCount(keywordResults, vectorResults);
+        List<SearchResult> fused = hybrid.documents().stream()
+            .map(d -> DocumentSupport.toSearchResult(d, "rrf"))
+            .toList();
 
         if ("hybrid-rerank".equals(effectiveMode)) {
-            List<SearchResult> fused = rrfService.fuse(keywordResults, vectorResults, rerankCandidates);
             Instant rerankStart = Instant.now();
             List<SearchResult> reranked = rerankService.rerank(query, fused, topK);
             long rerankLatency = Duration.between(rerankStart, Instant.now()).toMillis();
-            logRetrieval(effectiveMode, keywordResults.size(), vectorResults.size(), overlap,
-                embeddingLatencyMs, keywordLatency.get(), vectorLatency.get(), rerankLatency, reranked);
-            return new RetrievalResult(reranked, fused, keywordResults.size(), vectorResults.size(), overlap,
-                embeddingLatencyMs, keywordLatency.get(), vectorLatency.get(), rerankLatency);
+            logRetrieval(effectiveMode, hybrid.keywordCount(), hybrid.vectorCount(), hybrid.overlapCount(),
+                embeddingLatencyMs, hybrid.keywordLatencyMs(), hybrid.vectorLatencyMs(), rerankLatency, reranked);
+            return new RetrievalResult(reranked, fused, hybrid.keywordCount(), hybrid.vectorCount(),
+                hybrid.overlapCount(), embeddingLatencyMs, hybrid.keywordLatencyMs(),
+                hybrid.vectorLatencyMs(), rerankLatency);
         }
 
-        List<SearchResult> fused = rrfService.fuse(keywordResults, vectorResults, topK);
-        logRetrieval(effectiveMode, keywordResults.size(), vectorResults.size(), overlap,
-            embeddingLatencyMs, keywordLatency.get(), vectorLatency.get(), 0, fused);
-        return new RetrievalResult(fused, List.of(), keywordResults.size(), vectorResults.size(), overlap,
-            embeddingLatencyMs, keywordLatency.get(), vectorLatency.get(), 0);
+        logRetrieval(effectiveMode, hybrid.keywordCount(), hybrid.vectorCount(), hybrid.overlapCount(),
+            embeddingLatencyMs, hybrid.keywordLatencyMs(), hybrid.vectorLatencyMs(), 0, fused);
+        return new RetrievalResult(fused, List.of(), hybrid.keywordCount(), hybrid.vectorCount(),
+            hybrid.overlapCount(), embeddingLatencyMs, hybrid.keywordLatencyMs(),
+            hybrid.vectorLatencyMs(), 0);
     }
 
     public record RetrievalResult(List<SearchResult> results,
@@ -110,15 +97,6 @@ public class RetrievalService {
                                   int keywordCount, int vectorCount, int overlapCount,
                                   long embeddingLatencyMs, long keywordLatencyMs,
                                   long vectorLatencyMs, long rerankLatencyMs) {}
-
-
-    private int overlapCount(List<SearchResult> keyword, List<SearchResult> vector) {
-        Set<String> ids = new HashSet<>();
-        for (SearchResult r : keyword) ids.add(r.getChunkId());
-        int overlap = 0;
-        for (SearchResult r : vector) if (ids.contains(r.getChunkId())) overlap++;
-        return overlap;
-    }
 
     private void logRetrieval(String mode, int keywordCount, int vectorCount, int overlap,
                               long embeddingLatencyMs, long keywordLatencyMs, long vectorLatencyMs,
@@ -160,14 +138,17 @@ public class RetrievalService {
         return DashScopeService.embeddingToString(embedding);
     }
 
-    private List<SearchResult> semanticSearch(String queryEmbedding, int topK) {
+    private DenseVectorStore denseStore() {
         String backend = config.get("vector.backend", "pgvector");
-        double threshold = config.getDouble("retrieval.similarity-threshold", 0.4);
-        VectorStore store = vectorStores.get(backend);
+        DenseVectorStore store = vectorStores.get(backend);
         if (store == null) {
             log.warn("Unknown vector backend '{}', falling back to pgvector", backend);
             store = vectorStores.get("pgvector");
         }
-        return store.search(queryEmbedding, topK, threshold);
+        return store;
+    }
+
+    private double similarityThreshold() {
+        return config.getDouble("retrieval.similarity-threshold", 0.4);
     }
 }
