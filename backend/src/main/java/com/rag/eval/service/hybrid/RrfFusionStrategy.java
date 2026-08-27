@@ -38,7 +38,6 @@ public class RrfFusionStrategy implements FusionStrategy {
                 if (existing == null) {
                     docLookup.put(doc.getId(), doc);
                 } else {
-                    mergeScore(existing, doc, DocumentSupport.META_KEYWORD_SCORE);
                     mergeScore(existing, doc, DocumentSupport.META_SEMANTIC_SCORE);
                 }
             }

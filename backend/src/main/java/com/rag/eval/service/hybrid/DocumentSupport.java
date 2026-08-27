@@ -17,7 +17,6 @@ public final class DocumentSupport {
     public static final String META_FILE_NAME = "file_name";
     public static final String META_CHAPTER = "chapter";
     public static final String META_SECTION = "section";
-    public static final String META_SOURCE_TYPE = "source_type";
     public static final String META_KEYWORD_SCORE = "keyword_score";
     public static final String META_SEMANTIC_SCORE = "semantic_score";
     public static final String META_RRF_SCORE = "rrf_score";
