@@ -283,7 +283,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
   }
 
   return (
-    <div style={{ height: '100vh', overflowY: 'auto', padding: 24, maxWidth: 960, margin: '0 auto', boxSizing: 'border-box' }}>
+    <div style={{ height: '100vh', overflowY: 'auto', padding: 24, maxWidth: 1440, margin: '0 auto', boxSizing: 'border-box' }}>
       <Space style={{ marginBottom: 16 }} align="center">
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0 }}><SettingOutlined /> 系统配置</Typography.Title>
@@ -291,174 +291,240 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
       </Space>
 
       <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false} disabled={!canEdit}>
-        <Card title={<span><KeyOutlined /> API Key（阿里云百炼）</span>} size="small" style={{ marginBottom: 16 }}>
-          <Typography.Text type="secondary">
-            用于调用 DashScope 大模型 / Embedding。填写后即时生效；仅显示脱敏尾号，不回显完整 Key。
-          </Typography.Text>
-          {canEdit && (
-            <Space.Compact style={{ width: '100%', marginTop: 8 }}>
-              <Input.Password
-                placeholder="sk-..."
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                style={{ maxWidth: 420 }}
-              />
-              <Button type="primary" onClick={saveApiKey} loading={savingKey}>保存 Key</Button>
-              <Button onClick={clearApiKey} disabled={!config.apiKeyMasked}>清除</Button>
-            </Space.Compact>
-          )}
-          <div style={{ marginTop: 8 }}>
-            <Typography.Text type="secondary">
-              {config.apiKeyMasked
-                ? `当前已配置：${config.apiKeyMasked}`
-                : '当前未配置（可在上方填写，或通过环境变量 DASHSCOPE_API_KEY 注入）'}
-            </Typography.Text>
-          </div>
-        </Card>
+        <Row gutter={16}>
+          <Col xs={24} lg={12}>
+            <Card title={<span><KeyOutlined /> API Key（阿里云百炼）</span>} size="small" style={{ marginBottom: 16 }}>
+              <Typography.Text type="secondary">
+                用于调用 DashScope 大模型 / Embedding。填写后即时生效；仅显示脱敏尾号，不回显完整 Key。
+              </Typography.Text>
+              {canEdit && (
+                <Space.Compact style={{ width: '100%', marginTop: 8 }}>
+                  <Input.Password
+                    placeholder="sk-..."
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    style={{ maxWidth: 420 }}
+                  />
+                  <Button type="primary" onClick={saveApiKey} loading={savingKey}>保存 Key</Button>
+                  <Button onClick={clearApiKey} disabled={!config.apiKeyMasked}>清除</Button>
+                </Space.Compact>
+              )}
+              <div style={{ marginTop: 8 }}>
+                <Typography.Text type="secondary">
+                  {config.apiKeyMasked
+                    ? `当前已配置：${config.apiKeyMasked}`
+                    : '当前未配置（可在上方填写，或通过环境变量 DASHSCOPE_API_KEY 注入）'}
+                </Typography.Text>
+              </div>
+            </Card>
 
-        <Card title={<span><GlobalOutlined /> 联网搜索</span>} size="small" style={{ marginBottom: 16 }}>
-          <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-            知识库检索置信度不足时自动联网补充（需用户具备 chat:web 权限）。默认关闭，开启后请选择搜索引擎并配置对应 Key。
-          </Typography.Text>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item label="启用联网搜索" name="webEnabled" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="搜索引擎" name="webProvider" rules={[{ required: true }]}>
-                <Select options={[{ label: 'Bocha（博查）', value: 'bocha' }]} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="单次搜索结果数" name="webMaxResults" rules={[{ required: true }]}>
-                <InputNumber min={1} max={20} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>Bocha API Key</Typography.Text>
-          {canEdit ? (
-            <Space.Compact style={{ width: '100%' }}>
-              <Input.Password
-                placeholder="Bocha Web Search API Key"
-                value={webApiKeyInput}
-                onChange={(e) => setWebApiKeyInput(e.target.value)}
-                style={{ maxWidth: 420 }}
-              />
-              <Button type="primary" onClick={saveWebApiKey} loading={savingWebKey}>保存 Key</Button>
-              <Button onClick={clearWebApiKey} disabled={!config.webApiKeyMasked}>清除</Button>
-            </Space.Compact>
-          ) : (
-            <Typography.Text type="secondary">仅管理员可配置</Typography.Text>
-          )}
-          <div style={{ marginTop: 8 }}>
-            <Typography.Text type="secondary">
-              {config.webApiKeyMasked
-                ? `当前已配置：${config.webApiKeyMasked}`
-                : '当前未配置（Bocha 引擎需填写后方可联网）'}
-            </Typography.Text>
-          </div>
-        </Card>
+            <Card title="检索参数" size="small" style={{ marginBottom: 16 }}>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item label="检索模式" name="mode" rules={[{ required: true }]}>
+                    <Select
+                      options={[
+                        { label: 'vector（仅向量）', value: 'vector' },
+                        { label: 'hybrid（关键词+向量 RRF）', value: 'hybrid' },
+                        { label: 'hybrid-rerank（RRF+精排）', value: 'hybrid-rerank' },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="top-k" name="topK" rules={[{ required: true }]}>
+                    <InputNumber min={1} max={50} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="召回倍数 (recall-size-multiplier)" name="recallSizeMultiplier" rules={[{ required: true }]}>
+                    <InputNumber min={1} max={20} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="RRF k" name="rrfK" rules={[{ required: true }]}>
+                    <InputNumber min={1} max={200} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="精排候选数 (rerank-candidates)" name="rerankCandidates" rules={[{ required: true }]}>
+                    <InputNumber min={1} max={200} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="相似度阈值 (similarity-threshold)" name="similarityThreshold" rules={[{ required: true }]}>
+                    <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
 
-        <Card title="检索参数" size="small" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item label="检索模式" name="mode" rules={[{ required: true }]}>
-                <Select
-                  options={[
-                    { label: 'vector（仅向量）', value: 'vector' },
-                    { label: 'hybrid（关键词+向量 RRF）', value: 'hybrid' },
-                    { label: 'hybrid-rerank（RRF+精排）', value: 'hybrid-rerank' },
-                  ]}
+            <Card title="生成参数（对话）" size="small" style={{ marginBottom: 16 }}>
+              <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                作用于知识库问答生成。top_p 设为 1.0 时以 temperature 为准；max_tokens 为 0 表示不限制长度。
+              </Typography.Text>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item label="temperature（采样温度）" name="temperature" rules={[{ required: true }]}>
+                    <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="top_p（核采样）" name="topP" rules={[{ required: true }]}>
+                    <InputNumber min={0.01} max={1} step={0.05} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="max_tokens（最大长度，0=不限制）" name="maxTokens" rules={[{ required: true }]}>
+                    <InputNumber min={0} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item
+                label="系统提示词（发送给大模型）"
+                name="systemPrompt"
+                extra="检索到的文档内容会自动拼接在提示词末尾（“=== 文档内容 ===”之后），此处只需填写指令部分。"
+              >
+                <Input.TextArea rows={6} />
+              </Form.Item>
+            </Card>
+
+            <Card title="缓存" size="small" style={{ marginBottom: 16 }}>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item label="启用语义缓存" name="enabled" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="缓存 TTL（秒）" name="ttlSeconds" rules={[{ required: true }]}>
+                    <InputNumber min={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+          </Col>
+
+          <Col xs={24} lg={12}>
+            <Card title={<span><GlobalOutlined /> 联网搜索</span>} size="small" style={{ marginBottom: 16 }}>
+              <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                知识库检索置信度不足时自动联网补充（需用户具备 chat:web 权限）。默认关闭，开启后请选择搜索引擎并配置对应 Key。
+              </Typography.Text>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item label="启用联网搜索" name="webEnabled" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="搜索引擎" name="webProvider" rules={[{ required: true }]}>
+                    <Select options={[{ label: 'Bocha（博查）', value: 'bocha' }]} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="单次搜索结果数" name="webMaxResults" rules={[{ required: true }]}>
+                    <InputNumber min={1} max={20} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>Bocha API Key</Typography.Text>
+              {canEdit ? (
+                <Space.Compact style={{ width: '100%' }}>
+                  <Input.Password
+                    placeholder="Bocha Web Search API Key"
+                    value={webApiKeyInput}
+                    onChange={(e) => setWebApiKeyInput(e.target.value)}
+                    style={{ maxWidth: 420 }}
+                  />
+                  <Button type="primary" onClick={saveWebApiKey} loading={savingWebKey}>保存 Key</Button>
+                  <Button onClick={clearWebApiKey} disabled={!config.webApiKeyMasked}>清除</Button>
+                </Space.Compact>
+              ) : (
+                <Typography.Text type="secondary">仅管理员可配置</Typography.Text>
+              )}
+              <div style={{ marginTop: 8 }}>
+                <Typography.Text type="secondary">
+                  {config.webApiKeyMasked
+                    ? `当前已配置：${config.webApiKeyMasked}`
+                    : '当前未配置（Bocha 引擎需填写后方可联网）'}
+                </Typography.Text>
+              </div>
+            </Card>
+
+            <Card title="模型" size="small" style={{ marginBottom: 16 }}>
+              {dimMismatch && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message={`向量模型 ${selectedEmbedding?.id} 维度为 ${selectedEmbedding?.dimensions}，与当前向量库 (${config.embeddingDimension} 维) 不一致，切换后需重新入库。`}
                 />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="top-k" name="topK" rules={[{ required: true }]}>
-                <InputNumber min={1} max={50} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="召回倍数 (recall-size-multiplier)" name="recallSizeMultiplier" rules={[{ required: true }]}>
-                <InputNumber min={1} max={20} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="RRF k" name="rrfK" rules={[{ required: true }]}>
-                <InputNumber min={1} max={200} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="精排候选数 (rerank-candidates)" name="rerankCandidates" rules={[{ required: true }]}>
-                <InputNumber min={1} max={200} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="相似度阈值 (similarity-threshold)" name="similarityThreshold" rules={[{ required: true }]}>
-                <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
+              )}
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item label="对话模型" name="chat" rules={[{ required: true }]}>
+                    <Select options={modelGroup('chat')} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="向量模型" name="embedding" rules={[{ required: true }]}>
+                    <Select options={modelGroup('embedding')} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="精排模型" name="rerank" rules={[{ required: true }]}>
+                    <Select options={modelGroup('rerank')} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
 
-        <Card title="模型" size="small" style={{ marginBottom: 16 }}>
-          {dimMismatch && (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 12 }}
-              message={`向量模型 ${selectedEmbedding?.id} 维度为 ${selectedEmbedding?.dimensions}，与当前向量库 (${config.embeddingDimension} 维) 不一致，切换后需重新入库。`}
-            />
-          )}
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item label="对话模型" name="chat" rules={[{ required: true }]}>
-                <Select options={modelGroup('chat')} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="向量模型" name="embedding" rules={[{ required: true }]}>
-                <Select options={modelGroup('embedding')} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="精排模型" name="rerank" rules={[{ required: true }]}>
-                <Select options={modelGroup('rerank')} />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
+            <Card title="评测（大模型评测）" size="small" style={{ marginBottom: 16 }}>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item label="评测模型" name="judgeModel" rules={[{ required: true }]}>
+                    <Select options={modelGroup('chat')} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="评测 temperature" name="judgeTemperature" rules={[{ required: true }]}>
+                    <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="默认启用大模型评测" name="judgeEnabled" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
 
-        <Card title="生成参数（对话）" size="small" style={{ marginBottom: 16 }}>
-          <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-            作用于知识库问答生成。top_p 设为 1.0 时以 temperature 为准；max_tokens 为 0 表示不限制长度。
-          </Typography.Text>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item label="temperature（采样温度）" name="temperature" rules={[{ required: true }]}>
-                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="top_p（核采样）" name="topP" rules={[{ required: true }]}>
-                <InputNumber min={0.01} max={1} step={0.05} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="max_tokens（最大长度，0=不限制）" name="maxTokens" rules={[{ required: true }]}>
-                <InputNumber min={0} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item
-            label="系统提示词（发送给大模型）"
-            name="systemPrompt"
-            extra="检索到的文档内容会自动拼接在提示词末尾（“=== 文档内容 ===”之后），此处只需填写指令部分。"
-          >
-            <Input.TextArea rows={6} />
-          </Form.Item>
-        </Card>
+            <Card title="安全" size="small" style={{ marginBottom: 16 }}>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item label="最小相似度 (min-similarity)" name="minSimilarity" rules={[{ required: true }]}>
+                    <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="越界阈值 (out-of-scope-threshold)" name="outOfScopeThreshold" rules={[{ required: true }]}>
+                    <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="启用越界检测" name="enableOutOfScopeCheck" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+                <Col span={24}>
+                  <Form.Item label="禁用关键词" name="forbiddenKeywords">
+                    <Select mode="tags" placeholder="输入后回车添加" options={keywordOptions} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+          </Col>
+        </Row>
 
         <Card
           title={<span><DatabaseOutlined /> 向量数据库</span>}
@@ -553,66 +619,6 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
           <Row gutter={16}>
             <Col span={6}>
               <Form.Item label="num_candidates" name="esNumCandidates" rules={[{ required: true }]}>
-                <InputNumber min={1} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
-
-        <Card title="评测（大模型评测）" size="small" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item label="评测模型" name="judgeModel" rules={[{ required: true }]}>
-                <Select options={modelGroup('chat')} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="评测 temperature" name="judgeTemperature" rules={[{ required: true }]}>
-                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="默认启用大模型评测" name="judgeEnabled" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
-
-        <Card title="安全" size="small" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item label="最小相似度 (min-similarity)" name="minSimilarity" rules={[{ required: true }]}>
-                <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="越界阈值 (out-of-scope-threshold)" name="outOfScopeThreshold" rules={[{ required: true }]}>
-                <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="启用越界检测" name="enableOutOfScopeCheck" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item label="禁用关键词" name="forbiddenKeywords">
-                <Select mode="tags" placeholder="输入后回车添加" options={keywordOptions} />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
-
-        <Card title="缓存" size="small" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item label="启用语义缓存" name="enabled" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="缓存 TTL（秒）" name="ttlSeconds" rules={[{ required: true }]}>
                 <InputNumber min={1} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
