@@ -25,6 +25,7 @@ const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [retrievalMode, setRetrievalMode] = useState<string>('hybrid');
   const [webEnabled, setWebEnabled] = useState(false);
+  const [chatMode, setChatMode] = useState<'workflow' | 'agent'>('workflow');
   const [view, setView] = useState<View>('main');
   const [docsOpen, setDocsOpen] = useState(false);
   const [metricsOpen, setMetricsOpen] = useState(false);
@@ -79,7 +80,11 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!has('config:view')) return;
     fetchConfig()
-      .then((c) => { setRetrievalMode(c.retrieval.mode); setWebEnabled(c.webSearch.enabled); })
+      .then((c) => {
+        setRetrievalMode(c.retrieval.mode);
+        setWebEnabled(c.webSearch.enabled);
+        setChatMode(c.chatMode === 'agent' ? 'agent' : 'workflow');
+      })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -116,7 +121,7 @@ const App: React.FC = () => {
 
   if (view === 'documents') return <DocumentManagement onBack={() => setView('main')} />;
   if (view === 'logs') return <LogManagement onBack={() => setView('main')} canClear={has('log:clear')} />;
-  if (view === 'config') return <ConfigPage onBack={() => setView('main')} onSaved={(mode, web) => { setRetrievalMode(mode); setWebEnabled(web); }} canEdit={has('config:edit')} />;
+  if (view === 'config') return <ConfigPage onBack={() => setView('main')} onSaved={(mode, web, cm) => { setRetrievalMode(mode); setWebEnabled(web); setChatMode(cm === 'agent' ? 'agent' : 'workflow'); }} canEdit={has('config:edit')} />;
   if (view === 'eval') return <EvaluationPage onBack={() => setView('main')} />;
   if (view === 'ops') return <OpsPage onBack={() => setView('main')} />;
   if (view === 'users') return <UserManagement onBack={() => setView('main')} />;
@@ -133,7 +138,7 @@ const App: React.FC = () => {
       onRequireLogin={() => setLoginOpen(true)}
     />
   );
-  const chatPanel = <ChatPanel retrievalMode={retrievalMode} isGuest={!user} canWebSearch={webEnabled && has('chat:web')} />;
+  const chatPanel = <ChatPanel retrievalMode={retrievalMode} isGuest={!user} canWebSearch={webEnabled && has('chat:web')} chatMode={chatMode} />;
   const canViewLogs = !!user;
   const hasMetrics = has('report:view') || canViewLogs;
   const metricsPanel = hasMetrics ? (

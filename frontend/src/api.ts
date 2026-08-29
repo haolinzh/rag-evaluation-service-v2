@@ -118,13 +118,13 @@ export async function getDocumentChunks(id: number): Promise<ChunkPreview[]> {
   return data;
 }
 
-export async function askQuestion(question: string, sessionId: string, mode: string, webSearch: string): Promise<ChatResponse> {
-  const { data } = await api.post('/chat', { question, sessionId, mode, webSearch });
+export async function askQuestion(question: string, sessionId: string, mode: string, webSearch: string, chatMode?: string): Promise<ChatResponse> {
+  const { data } = await api.post('/chat', { question, sessionId, mode, webSearch, chatMode });
   return data;
 }
 
 export interface StreamEvent {
-  type: 'thinking' | 'content' | 'done' | 'error';
+  type: 'thinking' | 'content' | 'done' | 'error' | 'tool_call';
   text?: string;
   content?: string;
   thinking?: string;
@@ -132,6 +132,8 @@ export interface StreamEvent {
   sources?: Source[];
   refusal?: boolean;
   refusalReason?: string;
+  tool?: string;
+  query?: string;
 }
 
 export async function streamAsk(
@@ -139,12 +141,13 @@ export async function streamAsk(
   sessionId: string,
   mode: string,
   webSearch: string,
+  chatMode: string,
   onEvent: (evt: StreamEvent) => void
 ): Promise<void> {
   const resp = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ question, sessionId, mode, webSearch }),
+    body: JSON.stringify({ question, sessionId, mode, webSearch, chatMode }),
   });
 
   if (!resp.ok || !resp.body) {

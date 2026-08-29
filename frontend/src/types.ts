@@ -140,6 +140,7 @@ export interface RequestLog {
   answer: string | null;
   model: string;
   retrievalMode: string;
+  chatMode?: string;
   hitDocuments: string;
   retrievedChunks: string | null;
   rerankCandidates: string | null;
@@ -209,6 +210,8 @@ export interface SystemConfig {
     maxResults: number;
   };
   webApiKeyMasked?: string | null;
+  chatMode?: 'workflow' | 'agent';
+  agentModel?: string;
 }
 
 export interface EvaluationQuestion {

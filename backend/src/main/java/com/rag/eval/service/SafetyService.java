@@ -41,19 +41,9 @@ public class SafetyService {
         boolean enableOutOfScopeCheck = config.getBool("safety.enable-out-of-scope-check", true);
         double outOfScopeThreshold = config.getDouble("safety.out-of-scope-threshold", 0.55);
 
-        // 0. Minimal prompt-injection defense: reject attempts to override system instructions
-        for (Pattern p : INJECTION_PATTERNS) {
-            if (p.matcher(question).find()) {
-                return new SafetyResult(Decision.REFUSE_PROMPT_INJECTION, false);
-            }
-        }
-
-        // 1. Check forbidden keywords
-        for (String kw : config.getList("safety.forbidden-keywords")) {
-            if (Pattern.compile(kw).matcher(question.toLowerCase()).find()) {
-                return new SafetyResult(Decision.REFUSE_SAFETY_VIOLATION, false);
-            }
-        }
+        // 0-1. Prompt-injection + forbidden-keyword checks on the raw input.
+        SafetyResult inputCheck = checkInput(question);
+        if (!inputCheck.allowed()) return inputCheck;
 
         // 2. Check confidence (max semantic similarity across chunks)
         double maxScore = chunks.stream()
@@ -68,6 +58,27 @@ public class SafetyService {
         //    signal the question belongs to a different domain than the knowledge base.
         if (enableOutOfScopeCheck && maxScore < outOfScopeThreshold) {
             return new SafetyResult(Decision.REFUSE_OUT_OF_SCOPE, false);
+        }
+
+        return new SafetyResult(Decision.ALLOW, true);
+    }
+
+    /** Input-side safety only (prompt injection + forbidden keywords), used by agent
+     *  mode where confidence/out-of-scope gates are intentionally skipped — the LLM
+     *  decides for itself whether it needs to retrieve anything. */
+    public SafetyResult checkInput(String question) {
+        // 0. Minimal prompt-injection defense: reject attempts to override system instructions
+        for (Pattern p : INJECTION_PATTERNS) {
+            if (p.matcher(question).find()) {
+                return new SafetyResult(Decision.REFUSE_PROMPT_INJECTION, false);
+            }
+        }
+
+        // 1. Check forbidden keywords
+        for (String kw : config.getList("safety.forbidden-keywords")) {
+            if (Pattern.compile(kw).matcher(question.toLowerCase()).find()) {
+                return new SafetyResult(Decision.REFUSE_SAFETY_VIOLATION, false);
+            }
         }
 
         return new SafetyResult(Decision.ALLOW, true);

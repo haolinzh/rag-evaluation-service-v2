@@ -77,6 +77,7 @@
 | **请求日志归属** | 每次问答记录请求人 `ownerId` / `ownerUsername`；登录用户默认仅见自己的日志，`log:view` 权限者可见全部 |
 | **系统提示词配置** | 「系统配置」页可编辑发送给大模型的系统提示词，空值回退默认；检索到的文档内容自动拼接在提示词末尾 |
 | **联网搜索（WebRAG）** | 知识库内检索置信度不足时自动联网补充（Bocha 引擎），主页全局开关 + 用户 `chat:web` 权限 + 前端「自动/联网/仅知识库」三档切换；联网来源含可点击 url |
+| **Agent 对话模式** | 「Workflow / Agent」可切换：agent 模式下把「知识库检索」与「联网搜索」作为 tool 交给 LLM 自主决策循环（`search_knowledge_base` / `search_web`），安全拒答与 PII 脱敏仍保留在代码层；决策步骤通过 SSE `tool_call` 事件实时展示 |
 
 ---
 
@@ -232,7 +233,7 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
 
 ### 3. 请求日志
 
-后端将每次问答请求以「请求」为 entry 持久化到 PostgreSQL（`request_log` 表），字段包括：请求 ID、时间、请求人（`ownerId` / `ownerUsername`）、问题、回答、session、模型、检索模式、命中文档、总/检索/生成延迟、LLM 调用次数、prompt/completion token、缓存命中、拒答及原因、召回 chunk 数、最高相似度、PII 脱敏数、状态（`success` / `refused` / `error`）。
+后端将每次问答请求以「请求」为 entry 持久化到 PostgreSQL（`request_log` 表），字段包括：请求 ID、时间、请求人（`ownerId` / `ownerUsername`）、问题、回答、session、模型、检索模式、**对话模式（`chat_mode`：`workflow` / `agent`）**、命中文档、总/检索/生成延迟、LLM 调用次数、prompt/completion token、缓存命中、拒答及原因、召回 chunk 数、最高相似度、PII 脱敏数、状态（`success` / `refused` / `error`）。agent 模式下 `model` 字段记录实际使用的 `agent.model`（默认 `qwen-plus`），workflow 记录 `dashscope.chat-model`（默认 `qwen-turbo`）。
 
 前端提供两处查看入口：
 
@@ -279,6 +280,15 @@ CSV 包含逐请求明细（检索/生成/总延迟、prompt/completion token、
 | `web.search.api-key` | — | Bocha API Key（配置页填写，脱敏回显） |
 
 触发条件：`web.search.enabled=true` 且用户具备 `chat:web` 权限，且（前端选「联网」强制触发，或「自动」下内部置信度低于阈值）。Bocha Key 通过 `PUT /api/config/websearch/apikey` 写入、`PUT /api/config/websearch/enabled` 切换。
+
+**对话模式（workflow / agent）**：全局默认由 `chat.mode` 决定，前端「系统配置」页或聊天框 Segmented 可切，也支持请求体 `chatMode` per-request 覆盖：
+
+| 配置键 | 默认 | 说明 |
+|---|---|---|
+| `chat.mode` | `workflow` | `workflow` 固定线性流程（缓存→检索→联网→安全→生成）；`agent` 把「知识库检索」与「联网搜索」作为 tool 交给 LLM 自主决策循环 |
+| `agent.model` | `qwen-plus` | agent 模式实际调用的对话模型（`qwen-plus` tool-calling 更稳定，故独立于 `dashscope.chat-model`） |
+
+agent 模式特点：安全拒答（prompt injection / 关键词黑名单）与 PII 脱敏**仍在代码层执行**（不交给 LLM，避免绕过）；LLM 自主决定是否需要检索、是否联网（联网仍需 `chat:web` 权限）；决策步骤通过 SSE `tool_call` 事件实时返回，前端在消息气泡内展示「Agent 决策过程」。
 
 ---
 
@@ -414,8 +424,8 @@ rag-evaluation-service/
 | `PUT/DELETE` | `/api/auth/users/{id}` | 更新 / 删除用户（`user:manage`） |
 | `GET/POST` | `/api/auth/roles` | 角色列表 / 新建角色（`user:manage`/`role:manage`） |
 | `PUT/DELETE` | `/api/auth/roles/{id}` | 更新 / 删除角色（`role:manage`，内置角色禁删） |
-| `POST` | `/api/chat` | 多轮问答，请求体 `{"question": "...", "sessionId": "...", "mode": "hybrid"}` |
-| `POST` | `/api/chat/stream` | 流式问答（SSE，逐 token 返回 `thinking`/`content`/`done` 事件） |
+| `POST` | `/api/chat` | 多轮问答，请求体 `{"question": "...", "sessionId": "...", "mode": "hybrid", "chatMode": "workflow"}`（`chatMode` 可选，覆盖全局 `chat.mode`） |
+| `POST` | `/api/chat/stream` | 流式问答（SSE，逐 token 返回 `thinking`/`content`/`done` 事件；agent 模式下额外返回 `tool_call` 事件展示工具调用步骤） |
 | `GET` | `/api/chat/history/{sessionId}` | 查询会话历史 |
 | `DELETE` | `/api/chat/history/{sessionId}` | 删除会话历史 |
 | `POST` | `/api/documents/upload` | 上传文档 (multipart，可带 `splitMode`/`chunkSize`/`overlap`/`delimiter` 参数) |

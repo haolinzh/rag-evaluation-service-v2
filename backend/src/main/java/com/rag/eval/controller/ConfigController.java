@@ -49,6 +49,8 @@ public class ConfigController {
     private static final String K_WEB_PROVIDER = "web.search.provider";
     private static final String K_WEB_MAX_RESULTS = "web.search.max-results";
     private static final String K_WEB_API_KEY = "web.search.api-key";
+    private static final String K_CHAT_MODE = "chat.mode";
+    private static final String K_AGENT_MODEL = "agent.model";
 
     private static final int EMBEDDING_DIMENSION = 1024;
 
@@ -66,6 +68,7 @@ public class ConfigController {
     );
 
     private static final Set<String> MODES = Set.of("vector", "hybrid", "hybrid-rerank");
+    private static final Set<String> CHAT_MODES = Set.of("workflow", "agent");
     private static final Set<String> VECTOR_BACKENDS = Set.of("pgvector", "elasticsearch");
     private static final Set<String> PG_INDEX_TYPES = Set.of("ivfflat", "hnsw");
     private static final Set<String> WEB_PROVIDERS = Set.of("bocha");
@@ -137,6 +140,12 @@ public class ConfigController {
             changes.put(K_WEB_ENABLED, String.valueOf(dto.webSearch().enabled()));
             changes.put(K_WEB_PROVIDER, dto.webSearch().provider());
             changes.put(K_WEB_MAX_RESULTS, String.valueOf(dto.webSearch().maxResults()));
+        }
+        if (dto.chatMode() != null && !dto.chatMode().isBlank()) {
+            changes.put(K_CHAT_MODE, dto.chatMode());
+        }
+        if (dto.agentModel() != null && !dto.agentModel().isBlank()) {
+            changes.put(K_AGENT_MODEL, dto.agentModel());
         }
 
         config.putAll(changes);
@@ -262,7 +271,9 @@ public class ConfigController {
                 config.getBool(K_WEB_ENABLED, false),
                 config.get(K_WEB_PROVIDER, "bocha"),
                 config.getInt(K_WEB_MAX_RESULTS, 5)),
-            maskApiKey(config.get(K_WEB_API_KEY, "")));
+            maskApiKey(config.get(K_WEB_API_KEY, "")),
+            config.get(K_CHAT_MODE, "workflow"),
+            config.get(K_AGENT_MODEL, "qwen-plus"));
     }
 
     private String maskApiKey(String key) {
@@ -318,6 +329,12 @@ public class ConfigController {
                 return "非法联网搜索引擎: " + dto.webSearch().provider();
             }
             if (dto.webSearch().maxResults() <= 0) return "联网搜索结果数必须为正数";
+        }
+        if (dto.chatMode() != null && !dto.chatMode().isBlank() && !CHAT_MODES.contains(dto.chatMode())) {
+            return "非法对话模式: " + dto.chatMode();
+        }
+        if (dto.agentModel() != null && !dto.agentModel().isBlank() && !isAllowedModel("chat", dto.agentModel())) {
+            return "不支持的 Agent 模型: " + dto.agentModel();
         }
         return null;
     }

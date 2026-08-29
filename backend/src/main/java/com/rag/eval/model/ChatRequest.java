@@ -8,4 +8,5 @@ public class ChatRequest {
     private String sessionId;
     private String mode;
     private String webSearch;
+    private String chatMode;
 }

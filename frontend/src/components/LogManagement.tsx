@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Table, Button, Typography, Tag, Space, Descriptions, message, Popconfirm, Steps } from 'antd';
 import { ArrowLeftOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -14,6 +14,71 @@ const statusColor: Record<string, string> = {
   success: 'green',
   refused: 'orange',
   error: 'red',
+};
+
+const retrievalModeColor: Record<string, string> = {
+  vector: 'geekblue',
+  hybrid: 'cyan',
+  'hybrid-rerank': 'gold',
+};
+
+const ResizableHeader: React.FC<React.ThHTMLAttributes<HTMLTableCellElement> & {
+  width?: number;
+  onResize?: (width: number) => void;
+}> = ({ width, onResize, children, ...restProps }) => {
+  const [dragging, setDragging] = useState(false);
+  const startX = useRef(0);
+  const startW = useRef(0);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      if (onResize) onResize(Math.max(50, startW.current + (e.clientX - startX.current)));
+    };
+    const onUp = () => {
+      setDragging(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, [dragging, onResize]);
+
+  if (!width) {
+    return <th {...restProps}>{children}</th>;
+  }
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    startX.current = e.clientX;
+    startW.current = width;
+    setDragging(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  return (
+    <th {...restProps} style={{ ...restProps.style, position: 'relative' }}>
+      {children}
+      <span
+        onMouseDown={onMouseDown}
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: -4,
+          bottom: 0,
+          width: 8,
+          cursor: 'col-resize',
+          zIndex: 1,
+        }}
+      />
+    </th>
+  );
 };
 
 const formatTime = (s?: string) => {
@@ -87,6 +152,20 @@ const renderChunks = (json?: string | null) => {
 };
 
 const renderPipeline = (r: RequestLog) => {
+  if (r.chatMode === 'agent') {
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <Steps
+          size="small"
+          current={r.llmCallCount > 0 ? 1 : 0}
+          items={[{ title: 'Agent 工具调用循环', description: `LLM 调用 ${r.llmCallCount} 次` }]}
+        />
+        <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
+          命中 {r.chunksRetrieved ?? 0} chunks{r.webSearchUsed ? '（含联网）' : ''}
+        </div>
+      </div>
+    );
+  }
   if (r.cacheHit) {
     return <div style={{ marginBottom: 12, color: '#888', fontSize: 12 }}>语义缓存命中，跳过检索流水线</div>;
   }
@@ -127,6 +206,20 @@ const renderPipeline = (r: RequestLog) => {
 const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
   const [logs, setLogs] = useState<RequestLog[]>([]);
   const [loading, setLoading] = useState(false);
+  const [colWidths, setColWidths] = useState<Record<string, number>>({
+    createdAt: 160,
+    requestId: 240,
+    sessionId: 200,
+    ownerUsername: 100,
+    question: 240,
+    chatMode: 90,
+    retrievalMode: 110,
+    model: 100,
+    status: 80,
+    responseTimeMs: 90,
+    llmCallCount: 90,
+    hitDocuments: 200,
+  });
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -153,22 +246,43 @@ const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
     }
   };
 
-  const columns: ColumnsType<RequestLog> = [
-    { title: '时间', dataIndex: 'createdAt', key: 'createdAt', width: 160, render: (v: string) => formatTime(v) },
-    { title: '请求 ID', dataIndex: 'requestId', key: 'requestId', width: 240, ellipsis: true },
-    { title: 'Session', dataIndex: 'sessionId', key: 'sessionId', width: 200, ellipsis: true },
-    { title: '用户', dataIndex: 'ownerUsername', key: 'ownerUsername', width: 100, ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '问题', dataIndex: 'question', key: 'question', ellipsis: true },
-    { title: '模式', dataIndex: 'retrievalMode', key: 'retrievalMode', width: 90 },
-    { title: '模型', dataIndex: 'model', key: 'model', width: 100 },
-    {
-      title: '状态', dataIndex: 'status', key: 'status', width: 80,
-      render: (v: string) => <Tag color={statusColor[v] ?? 'default'}>{v}</Tag>,
-    },
-    { title: '耗时', dataIndex: 'responseTimeMs', key: 'responseTimeMs', width: 90, render: (v: number) => `${v}ms` },
-    { title: 'LLM 调用', dataIndex: 'llmCallCount', key: 'llmCallCount', width: 90 },
-    { title: '命中文档', dataIndex: 'hitDocuments', key: 'hitDocuments', ellipsis: true },
-  ];
+  const columns: ColumnsType<RequestLog> = useMemo(() => {
+    const headerProps = (key: string) => ({
+      width: colWidths[key],
+      onResize: (w: number) => setColWidths((prev) => ({ ...prev, [key]: w })),
+    });
+    return [
+      { title: '时间', dataIndex: 'createdAt', key: 'createdAt', width: colWidths.createdAt, render: (v: string) => formatTime(v), onHeaderCell: () => headerProps('createdAt') },
+      { title: '请求 ID', dataIndex: 'requestId', key: 'requestId', width: colWidths.requestId, ellipsis: true, onHeaderCell: () => headerProps('requestId') },
+      { title: 'Session', dataIndex: 'sessionId', key: 'sessionId', width: colWidths.sessionId, ellipsis: true, onHeaderCell: () => headerProps('sessionId') },
+      { title: '用户', dataIndex: 'ownerUsername', key: 'ownerUsername', width: colWidths.ownerUsername, ellipsis: true, render: (v: string | null) => v || '—', onHeaderCell: () => headerProps('ownerUsername') },
+      { title: '问题', dataIndex: 'question', key: 'question', width: colWidths.question, ellipsis: true, onHeaderCell: () => headerProps('question') },
+      {
+        title: '对话模式', dataIndex: 'chatMode', key: 'chatMode', width: colWidths.chatMode,
+        render: (v: string | undefined) =>
+          v === 'agent'
+            ? <Tag color="purple" style={{ margin: 0 }}>agent</Tag>
+            : <Tag color="default" style={{ margin: 0 }}>workflow</Tag>,
+        onHeaderCell: () => headerProps('chatMode'),
+      },
+      {
+        title: '检索模式', dataIndex: 'retrievalMode', key: 'retrievalMode', width: colWidths.retrievalMode,
+        render: (v: string) => (
+          <Tag color={retrievalModeColor[v] ?? 'default'} style={{ margin: 0 }}>{v}</Tag>
+        ),
+        onHeaderCell: () => headerProps('retrievalMode'),
+      },
+      { title: '模型', dataIndex: 'model', key: 'model', width: colWidths.model, onHeaderCell: () => headerProps('model') },
+      {
+        title: '状态', dataIndex: 'status', key: 'status', width: colWidths.status,
+        render: (v: string) => <Tag color={statusColor[v] ?? 'default'}>{v}</Tag>,
+        onHeaderCell: () => headerProps('status'),
+      },
+      { title: '耗时', dataIndex: 'responseTimeMs', key: 'responseTimeMs', width: colWidths.responseTimeMs, render: (v: number) => `${v}ms`, onHeaderCell: () => headerProps('responseTimeMs') },
+      { title: 'LLM 调用', dataIndex: 'llmCallCount', key: 'llmCallCount', width: colWidths.llmCallCount, onHeaderCell: () => headerProps('llmCallCount') },
+      { title: '命中文档', dataIndex: 'hitDocuments', key: 'hitDocuments', width: colWidths.hitDocuments, ellipsis: true, onHeaderCell: () => headerProps('hitDocuments') },
+    ];
+  }, [colWidths]);
 
   return (
     <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
@@ -188,8 +302,9 @@ const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
         dataSource={logs}
         columns={columns}
         loading={loading}
+        components={{ header: { cell: ResizableHeader } }}
         pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [20, 50, 100] }}
-        scroll={{ x: 1200, y: 'calc(100vh - 220px)' }}
+        scroll={{ x: 'max-content', y: 'calc(100vh - 220px)' }}
         expandable={{
           expandedRowRender: (r) => (
             <>
@@ -197,6 +312,7 @@ const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
               <Descriptions size="small" column={2} bordered>
               <Descriptions.Item label="请求 ID" span={2}>{r.requestId}</Descriptions.Item>
               <Descriptions.Item label="Session">{r.sessionId}</Descriptions.Item>
+              <Descriptions.Item label="对话模式">{r.chatMode === 'agent' ? 'agent' : 'workflow'}</Descriptions.Item>
               <Descriptions.Item label="模型">{r.model}</Descriptions.Item>
               <Descriptions.Item label="问题" span={2}>{r.question}</Descriptions.Item>
               <Descriptions.Item label="回答" span={2}>{r.answer ?? '—'}</Descriptions.Item>

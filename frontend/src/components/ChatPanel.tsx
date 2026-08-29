@@ -18,6 +18,7 @@ interface Message {
   sources?: ChatResponse['sources'];
   retrievalMode?: string;
   refusal?: boolean;
+  steps?: { tool: string; query: string }[];
 }
 
 interface Session {
@@ -31,6 +32,7 @@ interface Props {
   retrievalMode: string;
   isGuest: boolean;
   canWebSearch: boolean;
+  chatMode: 'workflow' | 'agent';
 }
 
 interface StoredSession {
@@ -78,7 +80,10 @@ const parseSources = (raw?: string | null): Source[] | undefined => {
   }
 };
 
-const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch }) => {
+const toolLabel = (tool: string) =>
+  tool === 'search_knowledge_base' ? '检索知识库' : tool === 'search_web' ? '联网搜索' : tool;
+
+const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch, chatMode: defaultChatMode }) => {
   const initialRef = useRef<{ sessions: Session[]; activeId: string } | null>(null);
   if (initialRef.current === null) {
     const stored = readStored();
@@ -100,6 +105,7 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch }) =>
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [webSearch, setWebSearch] = useState<'auto' | 'on' | 'off'>('auto');
+  const [chatMode, setChatMode] = useState<'workflow' | 'agent'>(defaultChatMode);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -111,6 +117,10 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch }) =>
   useEffect(() => {
     writeStored(sessions, activeId);
   }, [sessions, activeId]);
+
+  useEffect(() => {
+    setChatMode(defaultChatMode);
+  }, [defaultChatMode]);
 
   useEffect(() => {
     if (isGuest) return;
@@ -204,12 +214,16 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch }) =>
 
     let accThinking = '';
     let accContent = '';
+    let accSteps: { tool: string; query: string }[] = [];
 
     try {
-      await streamAsk(q, active.id, retrievalMode, webSearch, (evt) => {
+      await streamAsk(q, active.id, retrievalMode, webSearch, chatMode, (evt) => {
         if (evt.type === 'thinking') {
           accThinking += evt.text ?? '';
           patchAssistant({ thinking: accThinking });
+        } else if (evt.type === 'tool_call') {
+          accSteps = [...accSteps, { tool: evt.tool ?? '', query: evt.query ?? '' }];
+          patchAssistant({ steps: accSteps });
         } else if (evt.type === 'content') {
           accContent += evt.text ?? '';
           patchAssistant({ content: accContent });
@@ -342,6 +356,22 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch }) =>
                   ) : (
                     <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{msg.content}</div>
                   )}
+                  {msg.steps && msg.steps.length > 0 && (
+                    <details open style={{ marginTop: 8, fontSize: 12 }}>
+                      <summary style={{ cursor: 'pointer', color: '#1677ff', userSelect: 'none' }}>Agent 决策过程</summary>
+                      <div style={{
+                        marginTop: 6,
+                        padding: '8px 10px',
+                        background: 'rgba(0,0,0,0.04)',
+                        borderRadius: 8,
+                        color: '#666',
+                      }}>
+                        {msg.steps.map((st, i) => (
+                          <div key={i} style={{ marginBottom: 4 }}>{toolLabel(st.tool)}：{st.query}</div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                   {msg.thinking && (
                     <details open style={{ marginTop: 8, fontSize: 12 }}>
                       <summary style={{ cursor: 'pointer', color: '#8c8c8c', userSelect: 'none' }}>思考过程</summary>
@@ -387,6 +417,18 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch }) =>
           <div ref={messagesEndRef} />
         </div>
 
+        <div style={{ padding: '0 12px 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Segmented
+            size="small"
+            value={chatMode}
+            onChange={(v) => setChatMode(v as 'workflow' | 'agent')}
+            options={[
+              { label: 'Workflow', value: 'workflow' },
+              { label: 'Agent', value: 'agent' },
+            ]}
+          />
+          <Text type="secondary" style={{ fontSize: 12 }}>Agent：由 LLM 自主决定检索与联网</Text>
+        </div>
         {canWebSearch && (
           <div style={{ padding: '0 12px 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Segmented

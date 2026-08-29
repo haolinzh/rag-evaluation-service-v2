@@ -46,6 +46,9 @@ public class RequestLog {
     @Column(name = "retrieval_mode", length = 32)
     private String retrievalMode;
 
+    @Column(name = "chat_mode", length = 16)
+    private String chatMode;
+
     @Column(name = "hit_documents", columnDefinition = "TEXT")
     private String hitDocuments;
 

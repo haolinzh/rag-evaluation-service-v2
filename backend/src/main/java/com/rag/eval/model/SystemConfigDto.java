@@ -14,7 +14,9 @@ public record SystemConfigDto(
     int embeddingDimension,
     String apiKeyMasked,
     WebSearch webSearch,
-    String webApiKeyMasked
+    String webApiKeyMasked,
+    String chatMode,
+    String agentModel
 ) {
     public record Retrieval(String mode, int topK, int recallSizeMultiplier, int rrfK,
                             int rerankCandidates, double similarityThreshold) {}

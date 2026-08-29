@@ -54,6 +54,7 @@ public class ChatService {
     private final AuthService authService;
     private final ConfigService configService;
     private final WebSearchService webSearchService;
+    private final AgentService agentService;
 
     public ChatService(DashScopeService dashScope,
                        RetrievalService retrievalService,
@@ -68,7 +69,8 @@ public class ChatService {
                        AuthorizationService authorizationService,
                        AuthService authService,
                        ConfigService configService,
-                       WebSearchService webSearchService) {
+                       WebSearchService webSearchService,
+                       AgentService agentService) {
         this.dashScope = dashScope;
         this.retrievalService = retrievalService;
         this.safetyService = safetyService;
@@ -83,11 +85,17 @@ public class ChatService {
         this.authService = authService;
         this.configService = configService;
         this.webSearchService = webSearchService;
+        this.agentService = agentService;
     }
 
-    public ChatResponse ask(String question, String sessionId, String mode, String webSearch, AuthenticatedUser viewer) {
+    public ChatResponse ask(String question, String sessionId, String mode, String webSearch, String chatMode, AuthenticatedUser viewer) {
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = UUID.randomUUID().toString();
+        }
+
+        String effectiveChatMode = resolveChatMode(chatMode);
+        if ("agent".equals(effectiveChatMode)) {
+            return askAgent(question, sessionId, mode, viewer);
         }
 
         String effectiveMode = retrievalService.resolveMode(mode);
@@ -128,7 +136,7 @@ public class ChatService {
                 ChatResponse cachedResponse = deserializeCached(cached, effectiveMode);
                 metrics.setAnswerCompliance(complianceScore(cachedResponse.getContent(), false));
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", null, null, null, viewer);
+                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, viewer);
 
                 persistTurn(sessionId, question, cachedResponse.getContent(), cachedResponse.getThinking(),
                     cachedResponse.getRetrievalMode(), cachedResponse.getSources(), cachedResponse.isRefusal(), viewer);
@@ -181,7 +189,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
 
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
 
@@ -238,7 +246,7 @@ public class ChatService {
             // 7. Final metrics
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, answerText, hitDocuments, llmCallCount, "success", retrievedChunksJson, rerankCandidatesJson, promptForLog, viewer);
+            logRequest(metrics, question, answerText, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, viewer);
 
             // 8. Build sources
             boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
@@ -287,7 +295,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
 
             Map<String, Object> errorFields = new LinkedHashMap<>();
             errorFields.put("event", "error");
@@ -304,9 +312,15 @@ public class ChatService {
         }
     }
 
-    public void streamAsk(String question, String sessionId, String mode, String webSearch, SseEmitter emitter, AuthenticatedUser viewer) {
+    public void streamAsk(String question, String sessionId, String mode, String webSearch, String chatMode, SseEmitter emitter, AuthenticatedUser viewer) {
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = UUID.randomUUID().toString();
+        }
+
+        String effectiveChatMode = resolveChatMode(chatMode);
+        if ("agent".equals(effectiveChatMode)) {
+            streamAskAgent(question, sessionId, mode, emitter, viewer);
+            return;
         }
 
         String effectiveMode = retrievalService.resolveMode(mode);
@@ -347,7 +361,7 @@ public class ChatService {
                 ChatResponse cachedResponse = deserializeCached(cached, effectiveMode);
                 metrics.setAnswerCompliance(complianceScore(cachedResponse.getContent(), false));
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", null, null, null, viewer);
+                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, viewer);
 
                 persistTurn(sessionId, question, cachedResponse.getContent(), cachedResponse.getThinking(),
                     cachedResponse.getRetrievalMode(), cachedResponse.getSources(), cachedResponse.isRefusal(), viewer);
@@ -403,7 +417,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
 
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
 
@@ -473,7 +487,7 @@ public class ChatService {
             // 7. Final metrics + log
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, redacted, hitDocuments, llmCallCount, "success", retrievedChunksJson, rerankCandidatesJson, promptForLog, viewer);
+            logRequest(metrics, question, redacted, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, viewer);
 
             // 8. Build sources
             boolean noInfo = NO_INFO_PAT.matcher(redacted).find();
@@ -503,7 +517,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
 
             Map<String, Object> errorFields = new LinkedHashMap<>();
             errorFields.put("event", "error");
@@ -515,6 +529,153 @@ public class ChatService {
             MDC.remove("traceId");
             MDC.remove("sessionId");
             MDC.remove("retrievalMode");
+        }
+    }
+
+    private ChatResponse askAgent(String question, String sessionId, String mode, AuthenticatedUser viewer) {
+        String effectiveMode = retrievalService.resolveMode(mode);
+        OpsMetrics metrics = metricsCollector.startRequest(sessionId, effectiveMode);
+        MDC.put("traceId", metrics.getRequestId());
+        MDC.put("sessionId", sessionId);
+        MDC.put("retrievalMode", effectiveMode);
+
+        Instant start = Instant.now();
+        String hitDocuments = "";
+        try {
+            SafetyService.SafetyResult safe = safetyService.checkInput(question);
+            if (!safe.allowed()) {
+                metrics.setRefusal(true);
+                metrics.setRefusalReason(safe.decision().name());
+                metrics.setAnswerCompliance(1.0);
+                metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
+                metricsCollector.complete(metrics);
+                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, viewer);
+                persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
+                return new ChatResponse(safe.decision().message, null, effectiveMode,
+                    List.of(), true, safe.decision().name());
+            }
+
+            AgentService.AgentResult result = agentService.run(question, effectiveMode,
+                webAllowedForAgent(viewer), e -> {});
+
+            List<SearchResult> chunks = filterVisible(result.chunks(), viewer);
+            hitDocuments = chunks.stream().map(SearchResult::getFileName).distinct()
+                .collect(Collectors.joining(", "));
+            metrics.setChunksRetrieved(chunks.size());
+            metrics.setMaxChunkScore(chunks.stream().mapToDouble(SearchResult::getConfidenceScore).max().orElse(0.0));
+
+            String answerText = piiService.redact(result.answer());
+            metrics.setPiiRedactions(piiService.redactCount(result.answer()));
+            metrics.setAnswerCompliance(complianceScore(answerText, false));
+            metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
+            metricsCollector.complete(metrics);
+
+            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", null, null, null, viewer);
+
+            boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
+            List<Source> sources = buildSources(chunks, noInfo);
+            ChatResponse response = new ChatResponse(answerText, null, effectiveMode, sources, false, null);
+            persistTurn(sessionId, question, answerText, null, effectiveMode, sources, false, viewer);
+            return response;
+        } catch (RuntimeException e) {
+            metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
+            metricsCollector.complete(metrics);
+            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, viewer);
+            log.error("Agent chat failed: {}", e.getMessage(), e);
+            throw e;
+        } finally {
+            MDC.remove("traceId");
+            MDC.remove("sessionId");
+            MDC.remove("retrievalMode");
+        }
+    }
+
+    private void streamAskAgent(String question, String sessionId, String mode, SseEmitter emitter, AuthenticatedUser viewer) {
+        String effectiveMode = retrievalService.resolveMode(mode);
+        OpsMetrics metrics = metricsCollector.startRequest(sessionId, effectiveMode);
+        MDC.put("traceId", metrics.getRequestId());
+        MDC.put("sessionId", sessionId);
+        MDC.put("retrievalMode", effectiveMode);
+
+        Instant start = Instant.now();
+        String hitDocuments = "";
+        try {
+            SafetyService.SafetyResult safe = safetyService.checkInput(question);
+            if (!safe.allowed()) {
+                metrics.setRefusal(true);
+                metrics.setRefusalReason(safe.decision().name());
+                metrics.setAnswerCompliance(1.0);
+                metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
+                metricsCollector.complete(metrics);
+                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, viewer);
+                persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
+                emitContent(emitter, safe.decision().message);
+                emitDone(emitter, new ChatResponse(safe.decision().message, null, effectiveMode,
+                    List.of(), true, safe.decision().name()));
+                return;
+            }
+
+            AgentService.AgentResult result = agentService.run(question, effectiveMode,
+                webAllowedForAgent(viewer), e -> emitToolCall(emitter, e));
+
+            List<SearchResult> chunks = filterVisible(result.chunks(), viewer);
+            hitDocuments = chunks.stream().map(SearchResult::getFileName).distinct()
+                .collect(Collectors.joining(", "));
+            metrics.setChunksRetrieved(chunks.size());
+            metrics.setMaxChunkScore(chunks.stream().mapToDouble(SearchResult::getConfidenceScore).max().orElse(0.0));
+
+            String answerText = piiService.redact(result.answer());
+            metrics.setPiiRedactions(piiService.redactCount(result.answer()));
+            metrics.setAnswerCompliance(complianceScore(answerText, false));
+            metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
+            metricsCollector.complete(metrics);
+
+            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", null, null, null, viewer);
+
+            boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
+            List<Source> sources = buildSources(chunks, noInfo);
+            ChatResponse response = new ChatResponse(answerText, null, effectiveMode, sources, false, null);
+            persistTurn(sessionId, question, answerText, null, effectiveMode, sources, false, viewer);
+
+            emitContent(emitter, answerText);
+            emitDone(emitter, response);
+        } catch (RuntimeException e) {
+            metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
+            metricsCollector.complete(metrics);
+            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, viewer);
+            log.error("Agent chat stream failed: {}", e.getMessage(), e);
+            emitError(emitter, e.getMessage() == null ? "未知错误" : e.getMessage());
+        } finally {
+            MDC.remove("traceId");
+            MDC.remove("sessionId");
+            MDC.remove("retrievalMode");
+        }
+    }
+
+    private boolean webAllowedForAgent(AuthenticatedUser viewer) {
+        return configService.getBool("web.search.enabled", false)
+            && viewer != null && viewer.permissions() != null && viewer.permissions().contains("chat:web");
+    }
+
+    private List<Source> buildSources(List<SearchResult> chunks, boolean noInfo) {
+        if (noInfo) return List.of();
+        return chunks.stream()
+            .map(c -> {
+                String redacted = piiService.redact(c.getContent());
+                String snippet = redacted.length() > 200 ? redacted.substring(0, 200) : redacted;
+                return new Source(c.getFileName(), snippet, redacted, c.getScore(), c.getSource(),
+                    "web".equals(c.getSource()) ? c.getChunkId() : null);
+            })
+            .collect(Collectors.toMap(Source::getFileName, s -> s, (a, b) -> a, LinkedHashMap::new))
+            .values().stream().toList();
+    }
+
+    private void emitToolCall(SseEmitter emitter, AgentService.ToolCallEvent event) {
+        try {
+            emitter.send(objectMapper.writeValueAsString(Map.of(
+                "type", "tool_call", "tool", event.tool(), "query", event.query())));
+        } catch (Exception ignored) {
+            // client disconnected mid-stream
         }
     }
 
@@ -580,6 +741,13 @@ public class ChatService {
         if (webSearch == null || webSearch.isBlank()) return "auto";
         String v = webSearch.trim().toLowerCase();
         return ("on".equals(v) || "off".equals(v)) ? v : "auto";
+    }
+
+    private String resolveChatMode(String chatMode) {
+        if (chatMode == null || chatMode.isBlank()) {
+            return configService.get("chat.mode", "workflow");
+        }
+        return "agent".equalsIgnoreCase(chatMode.trim()) ? "agent" : "workflow";
     }
 
     private boolean shouldWebSearch(String webMode, List<SearchResult> chunks, AuthenticatedUser viewer) {
@@ -730,7 +898,7 @@ public class ChatService {
     }
 
     private void logRequest(OpsMetrics m, String question, String answer, String hitDocuments,
-                            int llmCallCount, String status,
+                            int llmCallCount, String status, String chatMode,
                             String retrievedChunks, String rerankCandidates, String prompt,
                             AuthenticatedUser viewer) {
         RequestLog log = new RequestLog();
@@ -742,7 +910,10 @@ public class ChatService {
         }
         log.setQuestion(piiService.redact(question));
         log.setAnswer(answer);
-        log.setModel(dashScope.getChatModel());
+        log.setModel("agent".equals(chatMode)
+            ? configService.get("agent.model", "qwen-plus")
+            : dashScope.getChatModel());
+        log.setChatMode(chatMode);
         log.setRetrievalMode(m.getRetrievalMode());
         log.setHitDocuments(hitDocuments);
         log.setRetrievedChunks(retrievedChunks);

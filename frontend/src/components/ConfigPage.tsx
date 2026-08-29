@@ -6,7 +6,7 @@ import type { SystemConfig, RebuildStatus } from '../types';
 
 interface Props {
   onBack: () => void;
-  onSaved: (mode: string, webEnabled: boolean) => void;
+  onSaved: (mode: string, webEnabled: boolean, chatMode: string) => void;
   canEdit: boolean;
 }
 
@@ -42,6 +42,8 @@ interface FormValues {
   webEnabled: boolean;
   webProvider: string;
   webMaxResults: number;
+  chatMode: 'workflow' | 'agent';
+  agentModel: string;
 }
 
 const rebuildPhaseLabel: Record<string, string> = {
@@ -102,6 +104,8 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
           webEnabled: c.webSearch.enabled,
           webProvider: c.webSearch.provider,
           webMaxResults: c.webSearch.maxResults,
+          chatMode: c.chatMode === 'agent' ? 'agent' : 'workflow',
+          agentModel: c.agentModel || 'qwen-plus',
         });
       })
       .catch(() => message.error('配置加载失败'));
@@ -171,13 +175,15 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
       },
       cache: { enabled: v.enabled, ttlSeconds: v.ttlSeconds },
       webSearch: { enabled: v.webEnabled, provider: v.webProvider, maxResults: v.webMaxResults },
+      chatMode: v.chatMode,
+      agentModel: v.agentModel,
       modelOptions: config.modelOptions,
       embeddingDimension: config.embeddingDimension,
     };
     setSaving(true);
     try {
       await updateConfig(next);
-      onSaved(v.mode, v.webEnabled);
+      onSaved(v.mode, v.webEnabled, v.chatMode);
       message.success('配置已保存，即时生效');
     } catch (e: any) {
       message.error(e?.response?.data?.error ?? '保存失败');
@@ -357,6 +363,30 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
                   </Form.Item>
                 </Col>
               </Row>
+            </Card>
+
+            <Card title="对话模式" size="small" style={{ marginBottom: 16 }}>
+              <Form.Item
+                label="对话模式"
+                name="chatMode"
+                rules={[{ required: true }]}
+                extra="workflow：固定流程（检索→安全→生成）；agent：由 LLM 自主决定检索与联网（tool-use 决策循环）。"
+              >
+                <Select
+                  options={[
+                    { label: 'workflow（固定流程）', value: 'workflow' },
+                    { label: 'agent（LLM 自主决策）', value: 'agent' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item
+                label="Agent 模型"
+                name="agentModel"
+                rules={[{ required: true }]}
+                extra="agent 模式使用独立模型（默认 qwen-plus，tool-calling 更稳定），不影响 workflow 的对话模型。"
+              >
+                <Select options={modelGroup('chat')} />
+              </Form.Item>
             </Card>
 
             <Card title="生成参数（对话）" size="small" style={{ marginBottom: 16 }}>

@@ -97,6 +97,13 @@ public class DashScopeService {
         }
     }
 
+    /** Raw model access for the agent loop: reuses the runtime hot-swapped model
+     *  (via {@link #refreshModels}) and delegates the full prompt (system/user/tools). */
+    public ChatResponse call(Prompt prompt) {
+        refreshModels(config.resolveDashScopeApiKey());
+        return chatModel.call(prompt);
+    }
+
     public ChatResult chatStream(String systemPrompt, String userMessage,
                                  Consumer<String> onThinking, Consumer<String> onContent) {
         try {

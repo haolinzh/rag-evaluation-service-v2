@@ -11,6 +11,12 @@ const statusColor: Record<string, string> = {
   error: 'red',
 };
 
+const retrievalModeColor: Record<string, string> = {
+  vector: 'geekblue',
+  hybrid: 'cyan',
+  'hybrid-rerank': 'gold',
+};
+
 interface Props {
   onOpenManagement: () => void;
   canClear: boolean;
@@ -67,8 +73,13 @@ const LogPanel: React.FC<Props> = ({ onOpenManagement, canClear }) => {
       title: '模式',
       dataIndex: 'retrievalMode',
       key: 'retrievalMode',
-      width: 76,
-      ellipsis: true,
+      width: 104,
+      render: (v: string, r: RequestLog) =>
+        r.chatMode === 'agent' ? (
+          <Tag color="purple" style={{ margin: 0 }}>agent</Tag>
+        ) : (
+          <Tag color={retrievalModeColor[v] ?? 'default'} style={{ margin: 0 }}>{v}</Tag>
+        ),
     },
     {
       title: '状态',

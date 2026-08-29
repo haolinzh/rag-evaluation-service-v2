@@ -16,11 +16,12 @@
 | `createdAt` | datetime | 写入时间（`@PrePersist` 自动填充） |
 | `question` | string | 用户问题，**已做 PII 脱敏**（手机号/身份证/邮箱中段星号掩码） |
 | `answer` | string | 生成的回答；`error` 状态时为 `null` |
-| `model` | string | 对话模型（`qwen-turbo`，可切换 `qwen-plus`/`qwen-max` 等） |
+| `model` | string | 实际使用的对话模型：workflow 为 `dashscope.chat-model`（默认 `qwen-turbo`）；agent 为 `agent.model`（默认 `qwen-plus`，tool-calling 更稳定） |
 | `retrievalMode` | string | 实际生效的检索模式：`vector` / `hybrid` / `hybrid-rerank` |
+| `chatMode` | string | 对话模式：`workflow`（固定流程）或 `agent`（LLM 自主决定检索与联网的 tool-use 循环），对应 DB 列 `chat_mode` |
 | `hitDocuments` | string | 命中的文档文件名（去重，逗号分隔） |
 | `responseTimeMs` | long | 总耗时（毫秒） |
-| `llmCallCount` | int | 调用大模型的次数（当前单次请求为 1；缓存命中为 0） |
+| `llmCallCount` | int | 调用大模型的次数（workflow 单次为 1；agent 工具循环通常 ≥2；缓存命中为 0） |
 | `cacheHit` | bool | 是否命中语义缓存 |
 | `refusal` | bool | 是否拒答 |
 | `refusalReason` | string | 拒答原因（`REFUSE_SAFETY_VIOLATION` / `REFUSE_LOW_CONFIDENCE` / `REFUSE_OUT_OF_SCOPE`） |
@@ -71,6 +72,7 @@ piiRedactions, chunksRetrieved, maxChunkScore, answerCompliance
   "answer": "RAG 即检索增强生成……",
   "model": "qwen-turbo",
   "retrievalMode": "hybrid",
+  "chatMode": "workflow",
   "hitDocuments": "intro.pdf, architecture.pdf",
   "responseTimeMs": 1823,
   "llmCallCount": 1,
