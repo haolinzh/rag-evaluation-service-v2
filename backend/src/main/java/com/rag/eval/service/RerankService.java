@@ -52,7 +52,7 @@ public class RerankService {
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(RERANK_URL))
                 .timeout(Duration.ofSeconds(30))
-                .header("Authorization", "Bearer " + resolveApiKey())
+                .header("Authorization", "Bearer " + config.resolveDashScopeApiKey())
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
@@ -91,16 +91,5 @@ public class RerankService {
             log.warn("Rerank failed, falling back to RRF order: {}", e.getMessage());
             return candidates.subList(0, limit);
         }
-    }
-
-    private String resolveApiKey() {
-        String key = config.get("dashscope.api-key", "");
-        if (key == null || key.isBlank()) {
-            key = System.getenv("DASHSCOPE_API_KEY");
-        }
-        if (key == null || key.isBlank()) {
-            throw new RuntimeException("DASHSCOPE_API_KEY not set");
-        }
-        return key;
     }
 }

@@ -78,7 +78,7 @@ public class DashScopeService {
     private ChatResult generate(String model, double temperature, double topP, int maxTokens,
                                 String systemPrompt, String userMessage) {
         try {
-            refreshModels(resolveApiKey());
+            refreshModels(config.resolveDashScopeApiKey());
             DashScopeChatOptions options = chatOptions(model, temperature, topP, maxTokens);
             Prompt prompt = new Prompt(List.of(new SystemMessage(systemPrompt), new UserMessage(userMessage)), options);
 
@@ -100,7 +100,7 @@ public class DashScopeService {
     public ChatResult chatStream(String systemPrompt, String userMessage,
                                  Consumer<String> onThinking, Consumer<String> onContent) {
         try {
-            refreshModels(resolveApiKey());
+            refreshModels(config.resolveDashScopeApiKey());
             DashScopeChatOptions options = chatOptions(getChatModel(),
                 config.getDouble("generation.temperature", 0.3),
                 config.getDouble("generation.top-p", 1.0),
@@ -160,7 +160,7 @@ public class DashScopeService {
 
     public List<Double> embed(String text) {
         try {
-            refreshModels(resolveApiKey());
+            refreshModels(config.resolveDashScopeApiKey());
             EmbeddingResponse response = embeddingModel.call(
                 new EmbeddingRequest(List.of(text), embeddingOptions()));
             List<Embedding> embeddings = response.getResults();
@@ -173,7 +173,7 @@ public class DashScopeService {
 
     public List<List<Double>> embedBatch(List<String> texts) {
         try {
-            refreshModels(resolveApiKey());
+            refreshModels(config.resolveDashScopeApiKey());
             List<List<Double>> all = new ArrayList<>();
             // DashScope text-embedding-v3 rejects batches larger than 10
             int batchSize = 10;
@@ -206,17 +206,6 @@ public class DashScopeService {
         List<Double> result = new ArrayList<>(vector.length);
         for (float f : vector) result.add((double) f);
         return result;
-    }
-
-    private String resolveApiKey() {
-        String apiKey = config.get("dashscope.api-key", "");
-        if (apiKey == null || apiKey.isBlank()) {
-            apiKey = System.getenv("DASHSCOPE_API_KEY");
-        }
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new RuntimeException("DASHSCOPE_API_KEY not set");
-        }
-        return apiKey;
     }
 
     /** Rebuild the DashScope models when the resolved API key changes at runtime,

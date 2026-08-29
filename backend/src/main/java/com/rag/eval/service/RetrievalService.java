@@ -22,18 +22,18 @@ public class RetrievalService {
 
     private static final Logger log = LoggerFactory.getLogger(RetrievalService.class);
 
-    private final Map<String, DenseVectorStore> vectorStores;
+    private final DenseVectorStoreLocator vectorStoreLocator;
     private final HybridRetrievalStrategy hybridStrategy;
     private final RerankService rerankService;
     private final DashScopeService dashScope;
     private final ConfigService config;
 
-    public RetrievalService(Map<String, DenseVectorStore> vectorStores,
+    public RetrievalService(DenseVectorStoreLocator vectorStoreLocator,
                             HybridRetrievalStrategy hybridStrategy,
                             RerankService rerankService,
                             DashScopeService dashScope,
                             ConfigService config) {
-        this.vectorStores = vectorStores;
+        this.vectorStoreLocator = vectorStoreLocator;
         this.hybridStrategy = hybridStrategy;
         this.rerankService = rerankService;
         this.dashScope = dashScope;
@@ -52,7 +52,7 @@ public class RetrievalService {
 
         if ("vector".equals(effectiveMode)) {
             Instant vectorStart = Instant.now();
-            List<Document> docs = denseStore().searchByEmbedding(queryEmb, topK, similarityThreshold());
+            List<Document> docs = vectorStoreLocator.resolve().searchByEmbedding(queryEmb, topK, similarityThreshold());
             long vectorLatencyMs = Duration.between(vectorStart, Instant.now()).toMillis();
             List<SearchResult> results = docs.stream()
                 .map(d -> DocumentSupport.toSearchResult(d, "semantic"))
@@ -136,16 +136,6 @@ public class RetrievalService {
     private String embedQuery(String query) {
         List<Double> embedding = dashScope.embed(query);
         return DashScopeService.embeddingToString(embedding);
-    }
-
-    private DenseVectorStore denseStore() {
-        String backend = config.get("vector.backend", "pgvector");
-        DenseVectorStore store = vectorStores.get(backend);
-        if (store == null) {
-            log.warn("Unknown vector backend '{}', falling back to pgvector", backend);
-            store = vectorStores.get("pgvector");
-        }
-        return store;
     }
 
     private double similarityThreshold() {

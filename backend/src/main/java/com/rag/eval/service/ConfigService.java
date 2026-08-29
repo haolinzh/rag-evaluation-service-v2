@@ -72,6 +72,17 @@ public class ConfigService {
             .toList();
     }
 
+    public String resolveDashScopeApiKey() {
+        String key = get("dashscope.api-key", "");
+        if (key == null || key.isBlank()) {
+            key = System.getenv("DASHSCOPE_API_KEY");
+        }
+        if (key == null || key.isBlank()) {
+            throw new RuntimeException("DASHSCOPE_API_KEY not set");
+        }
+        return key;
+    }
+
     public void put(String key, String value) {
         overrides.put(key, value);
         if (repo != null) {
