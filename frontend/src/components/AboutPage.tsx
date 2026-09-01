@@ -38,7 +38,7 @@ const techStack: { icon: React.ReactNode; group: string; items: string[] }[] = [
   {
     icon: <DeploymentUnitOutlined />,
     group: '后端',
-    items: ['Spring Boot 3.4.1 (Java 17)', 'Spring Security 6', 'Spring AI Alibaba', 'PostgreSQL 16 + pgvector', 'Elasticsearch 8.13.4', 'Redis 7', 'Apache Tika 3.1.0'],
+    items: ['Spring Boot 3.5.16 (Java 17)', 'Spring Security 6', 'Spring AI Alibaba', 'PostgreSQL 16 + pgvector', 'Elasticsearch 8.13.4', 'Redis 7', 'Apache Tika 3.1.0'],
   },
   {
     icon: <CodeOutlined />,
@@ -70,8 +70,8 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
             <RobotOutlined style={{ fontSize: 56, opacity: 0.95 }} />
             <Title level={2} style={{ color: '#fff', margin: '12px 0 4px' }}>RAG 评测服务 v2</Title>
             <Space size={8} style={{ marginBottom: 12 }}>
-              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>v1.0.0</Tag>
-              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>Spring Boot 3.4.1</Tag>
+              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>v2.0.0</Tag>
+              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>Spring Boot 3.5.16</Tag>
               <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>React 18</Tag>
             </Space>
             <Paragraph style={{ color: 'rgba(255,255,255,0.92)', fontSize: 15, maxWidth: 620, margin: '0 auto' }}>
@@ -137,7 +137,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
         <Card title="项目信息" style={{ borderRadius: 12 }}>
           <Descriptions column={{ xs: 1, sm: 2 }} size="small" bordered>
             <Descriptions.Item label="项目名称">RAG 评测服务 v2</Descriptions.Item>
-            <Descriptions.Item label="版本">v1.0.0</Descriptions.Item>
+            <Descriptions.Item label="版本">v2.0.0</Descriptions.Item>
             <Descriptions.Item label="交付基线" span={2}>tag v1.0-delivery（commit d29e8eb）</Descriptions.Item>
             <Descriptions.Item label="项目简介" span={2}>
               <a href="https://github.com/haolinzh/rag-evaluation-service" target="_blank" rel="noopener noreferrer">
