@@ -298,7 +298,7 @@ agent 模式特点：安全拒答（prompt injection / 关键词黑名单）与 
 
 | 层 | 技术 |
 |---|---|
-| 后端框架 | Spring Boot 3.4.1 (Java 17) |
+| 后端框架 | Spring Boot 3.5.16 (Java 17) |
 | 认证鉴权 | Spring Security 6（BCrypt + Bearer Token 无状态会话 + `@PreAuthorize` 方法级权限） |
 | AI 框架 | Spring AI Alibaba（`spring-ai-alibaba-starter-dashscope`）：`ChatModel` / `EmbeddingModel` 统一抽象，运行时按配置懒重建以支持热换 API Key / 模型 |
 | 大模型 | 阿里云百炼 DashScope：`qwen-turbo` (对话) + `text-embedding-v3` (向量，锁定 1024 维) + `qwen3-rerank` (精排)；对话可切换 `qwen-plus` / `qwen-max` / `deepseek-r1` 等模型 |
