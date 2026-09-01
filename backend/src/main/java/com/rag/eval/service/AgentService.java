@@ -73,7 +73,7 @@ public class AgentService {
         this.objectMapper = objectMapper;
     }
 
-    public record AgentResult(String answer, List<SearchResult> chunks, int llmCallCount) {}
+    public record AgentResult(String answer, List<SearchResult> chunks, int llmCallCount, String prompt) {}
     public record ToolCallEvent(String tool, String query) {}
     public record ToolQuery(String query) {}
 
@@ -88,6 +88,9 @@ public class AgentService {
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(AGENT_SYSTEM_PROMPT));
         messages.add(new UserMessage(question));
+
+        StringBuilder transcript = new StringBuilder();
+        transcript.append(AGENT_SYSTEM_PROMPT).append("\n\n[用户问题] ").append(question);
 
         int maxIterations = config.getInt("agent.max-iterations", 5);
 
@@ -104,12 +107,12 @@ public class AgentService {
                 response = dashScope.call(new Prompt(messages, options));
             } catch (Exception e) {
                 log.warn("Agent LLM call failed: {}", e.getMessage());
-                return new AgentResult("抱歉，我暂时无法回答这个问题，请稍后再试。", chunks, i);
+                return new AgentResult("抱歉，我暂时无法回答这个问题，请稍后再试。", chunks, i, transcript.toString());
             }
 
             AssistantMessage msg = response.getResult() != null ? response.getResult().getOutput() : null;
             if (msg == null) {
-                return new AgentResult("抱歉，我暂时无法回答这个问题，请稍后再试。", chunks, i + 1);
+                return new AgentResult("抱歉，我暂时无法回答这个问题，请稍后再试。", chunks, i + 1, transcript.toString());
             }
 
             if (msg.hasToolCalls()) {
@@ -120,6 +123,8 @@ public class AgentService {
                     onToolCall.accept(new ToolCallEvent(tc.name(), query));
                     String result = executeTool(tc.name(), query, retrievalMode, webAllowed, chunks);
                     responses.add(new ToolResponseMessage.ToolResponse(tc.id(), tc.name(), result));
+                    transcript.append("\n\n[工具调用: ").append(tc.name()).append("] ").append(query);
+                    transcript.append("\n[工具返回] ").append(result);
                 }
                 messages.add(ToolResponseMessage.builder().responses(responses).build());
                 continue;
@@ -127,13 +132,13 @@ public class AgentService {
 
             String answer = msg.getText();
             if (answer != null && !answer.isBlank()) {
-                return new AgentResult(answer, chunks, i + 1);
+                return new AgentResult(answer, chunks, i + 1, transcript.toString());
             }
-            return new AgentResult("抱歉，我暂时无法回答这个问题，请稍后再试。", chunks, i + 1);
+            return new AgentResult("抱歉，我暂时无法回答这个问题，请稍后再试。", chunks, i + 1, transcript.toString());
         }
 
         log.warn("Agent loop exceeded maxIterations={}", maxIterations);
-        return new AgentResult("抱歉，我暂时无法回答这个问题，请稍后再试。", chunks, maxIterations);
+        return new AgentResult("抱歉，我暂时无法回答这个问题，请稍后再试。", chunks, maxIterations, transcript.toString());
     }
 
     private ToolCallback kbTool(String retrievalMode, List<SearchResult> chunks) {
