@@ -249,11 +249,6 @@ export async function updateApiKey(apiKey: string): Promise<SystemConfig> {
   return data;
 }
 
-export async function updateWebSearchEnabled(enabled: boolean): Promise<SystemConfig> {
-  const { data } = await api.put('/config/websearch/enabled', { enabled });
-  return data;
-}
-
 export async function updateWebApiKey(apiKey: string): Promise<SystemConfig> {
   const { data } = await api.put('/config/websearch/apikey', { apiKey });
   return data;

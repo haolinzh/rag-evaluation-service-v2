@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, theme, Grid, Button, Drawer, Space, Switch, message } from 'antd';
-import { FileTextOutlined, BarChartOutlined, SettingOutlined, ExperimentOutlined, DashboardOutlined, TeamOutlined, SafetyCertificateOutlined, LogoutOutlined, LoginOutlined, UserOutlined, ControlOutlined, GlobalOutlined } from '@ant-design/icons';
+import { Layout, theme, Grid, Button, Drawer, Space } from 'antd';
+import { FileTextOutlined, BarChartOutlined, SettingOutlined, ExperimentOutlined, DashboardOutlined, TeamOutlined, SafetyCertificateOutlined, LogoutOutlined, LoginOutlined, UserOutlined, ControlOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import DocumentPanel from './components/DocumentPanel';
 import ChatPanel from './components/ChatPanel';
@@ -14,19 +14,38 @@ import OpsPage from './components/OpsPage';
 import LoginModal from './components/LoginModal';
 import UserManagement from './components/UserManagement';
 import RoleManagement from './components/RoleManagement';
+import AboutPage from './components/AboutPage';
 import type { DocumentMeta, AuthUser } from './types';
-import { listDocuments, fetchConfig, updateRetrievalMode, updateWebSearchEnabled, getToken, getCachedUser, setAuth, fetchMe, logout, fetchGuestPermissions } from './api';
+import { listDocuments, fetchConfig, updateRetrievalMode, getToken, getCachedUser, setAuth, fetchMe, logout, fetchGuestPermissions } from './api';
 
 const { Header, Content } = Layout;
 
-type View = 'main' | 'documents' | 'logs' | 'config' | 'eval' | 'ops' | 'users' | 'roles';
+type View = 'main' | 'documents' | 'logs' | 'config' | 'eval' | 'ops' | 'users' | 'roles' | 'about';
+
+const VIEW_HASHES: Record<View, string> = {
+  main: '/',
+  documents: '/documents',
+  logs: '/logs',
+  config: '/config',
+  eval: '/eval',
+  ops: '/ops',
+  users: '/users',
+  roles: '/roles',
+  about: '/about',
+};
+
+const parseViewFromHash = (): View => {
+  const h = window.location.hash.replace(/^#/, '');
+  const entry = (Object.entries(VIEW_HASHES) as [View, string][]).find(([, v]) => v === h);
+  return entry ? entry[0] : 'main';
+};
 
 const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [retrievalMode, setRetrievalMode] = useState<string>('hybrid');
   const [webEnabled, setWebEnabled] = useState(false);
   const [chatMode, setChatMode] = useState<'workflow' | 'agent'>('workflow');
-  const [view, setView] = useState<View>('main');
+  const [view, setView] = useState<View>(parseViewFromHash);
   const [docsOpen, setDocsOpen] = useState(false);
   const [metricsOpen, setMetricsOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -39,6 +58,19 @@ const App: React.FC = () => {
 
   const [guestPermissions, setGuestPermissions] = useState<string[]>(['document:read:public', 'config:view', 'ops:view', 'report:view']);
   const has = (p: string) => (user ? user.permissions : guestPermissions).includes(p);
+
+  useEffect(() => {
+    const target = VIEW_HASHES[view];
+    if (window.location.hash !== '#' + target) {
+      window.location.hash = target;
+    }
+  }, [view]);
+
+  useEffect(() => {
+    const onHashChange = () => setView(parseViewFromHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   useEffect(() => {
     const token = getToken();
@@ -105,12 +137,6 @@ const App: React.FC = () => {
     setView('main');
   };
 
-  const handleWebToggle = (checked: boolean) => {
-    setWebEnabled(checked);
-    updateWebSearchEnabled(checked)
-      .catch(() => { setWebEnabled(!checked); message.error('联网开关更新失败'); });
-  };
-
   if (!authReady) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
@@ -126,6 +152,7 @@ const App: React.FC = () => {
   if (view === 'ops') return <OpsPage onBack={() => setView('main')} />;
   if (view === 'users') return <UserManagement onBack={() => setView('main')} />;
   if (view === 'roles') return <RoleManagement onBack={() => setView('main')} />;
+  if (view === 'about') return <AboutPage onBack={() => setView('main')} />;
 
   const documentPanel = (
     <DocumentPanel
@@ -206,13 +233,6 @@ const App: React.FC = () => {
             管理
           </Button>
         )}
-        {has('config:edit') && (
-          <Space size={6} style={{ color: '#fff', fontSize: 14 }}>
-            <GlobalOutlined />
-            <span style={{ opacity: 0.9 }}>联网</span>
-            <Switch size="small" checked={webEnabled} onChange={handleWebToggle} />
-          </Space>
-        )}
         {user ? (
           <Space size={8} style={{ color: '#fff', fontSize: 14 }}>
             <span style={{ opacity: 0.9 }}>
@@ -232,6 +252,9 @@ const App: React.FC = () => {
             </Button>
           </Space>
         )}
+        <Button type="text" icon={<InfoCircleOutlined />} onClick={() => setView('about')} style={{ color: '#fff' }}>
+          关于
+        </Button>
       </Header>
 
       {isMobile ? (
