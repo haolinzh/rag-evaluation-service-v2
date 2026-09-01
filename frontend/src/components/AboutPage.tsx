@@ -52,6 +52,62 @@ const techStack: { icon: React.ReactNode; group: string; items: string[] }[] = [
   },
 ];
 
+const changelog: { title: string; items: string[] }[] = [
+  {
+    title: '检索引擎跃迁',
+    items: [
+      '从单一向量检索升级为混合检索：ES BM25 关键词 + 向量语义并行召回，RRF 融合 + qwen3-rerank 精排',
+      '引入 Spring AI Alibaba 作为 LLM / Embedding / 混合检索的统一实现',
+      '向量库可切换：pgvector / Elasticsearch dense_vector 运行时切换，双写 + 一键重建索引',
+      '日志详情新增检索流水线可视化（召回通道 + 评分）',
+    ],
+  },
+  {
+    title: '安全与权限（RBAC）',
+    items: [
+      '用户-角色-权限三层模型，BCrypt + Bearer Token 无状态会话',
+      '文档四档可见性（PUBLIC / DEPARTMENT / EXECUTIVE / PRIVATE），请求日志按用户归属',
+      '提示注入防御 → 关键词黑名单 → 相似度阈值 → 越界检测，四级安全闸门',
+      'PII 星号中段脱敏（身份证 / 手机号 / 邮箱）',
+    ],
+  },
+  {
+    title: '联网搜索（WebRAG）',
+    items: ['接入 Bocha 联网引擎，知识库置信度不足时自动联网补充，来源含可点击 URL'],
+  },
+  {
+    title: 'Agent 对话模式',
+    items: [
+      '「Workflow / Agent」可切换：检索与联网作为 tool 交给 LLM 自主决策循环',
+      '决策步骤经 SSE tool_call 事件实时展示，安全拒答与 PII 脱敏保留在代码层',
+    ],
+  },
+  {
+    title: '一键评测',
+    items: [
+      'hybrid / vector / hybrid-rerank 三模式对比，5 项质量指标 + LLM-as-Judge 大模型评测',
+      'SSE 流式进度、后台可取消、结果持久化与历史回看、测试集 DB 管理',
+    ],
+  },
+  {
+    title: '工程化与运维',
+    items: [
+      'Docker 容器化（后端内置 tesseract OCR，前端 nginx 反代 /api）',
+      '异步文档入库、扫描件 OCR、上传进度与去重',
+      '运维面板：ES / PG 状态、chunk 浏览、向量索引异步重建',
+      '运行时热配置（检索 / 模型 / 安全 / 缓存免重启）、Redis 语义缓存',
+    ],
+  },
+  {
+    title: '技术栈升级',
+    items: [
+      'Spring Boot 3.4.1 → 3.5.16',
+      'Spring AI 1.0.3 → 1.1.2',
+      'Spring AI Alibaba 1.0.0.2 → 1.1.2.3',
+    ],
+  },
+];
+
 const AboutPage: React.FC<Props> = ({ onBack }) => {
   return (
     <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box', background: '#f5f6f8' }}>
@@ -131,6 +187,26 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
               </Col>
             ))}
           </Row>
+        </Card>
+
+        {/* 版本演进 */}
+        <Card
+          title="版本演进"
+          extra={<Tag color="blue">v1.0-delivery → v2.0.0</Tag>}
+          style={{ marginBottom: 16, borderRadius: 12 }}
+        >
+          {changelog.map((g, idx) => (
+            <div key={g.title} style={{ marginBottom: idx === changelog.length - 1 ? 0 : 20 }}>
+              <div style={{ fontWeight: 600, color: '#1677ff', marginBottom: 8, fontSize: 15 }}>
+                {g.title}
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 20, color: '#555' }}>
+                {g.items.map((item) => (
+                  <li key={item} style={{ marginBottom: 4, lineHeight: 1.6, fontSize: 13 }}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </Card>
 
         {/* 项目信息 */}
