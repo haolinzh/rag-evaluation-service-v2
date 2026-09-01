@@ -3,8 +3,8 @@ package com.rag.eval.service;
 import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
-import com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingModel;
-import com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingOptions;
+import com.alibaba.cloud.ai.dashscope.embedding.text.DashScopeEmbeddingModel;
+import com.alibaba.cloud.ai.dashscope.embedding.text.DashScopeEmbeddingOptions;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -148,8 +148,7 @@ public class DashScopeService {
     }
 
     private DashScopeChatOptions chatOptions(String model, double temperature, double topP, int maxTokens) {
-        DashScopeChatOptions.DashscopeChatOptionsBuilder builder =
-            DashScopeChatOptions.builder().withModel(model).withTemperature(temperature);
+        var builder = DashScopeChatOptions.builder().withModel(model).withTemperature(temperature);
         if (topP < 1.0) {
             builder.withTopP(topP);
         }

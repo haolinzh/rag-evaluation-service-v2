@@ -36,13 +36,23 @@ public class AgentService {
     private static final String TOOL_KB = "search_knowledge_base";
     private static final String TOOL_WEB = "search_web";
 
-    private static final String AGENT_TOOL_INSTRUCTIONS = """
+    private static final String AGENT_SYSTEM_PROMPT = """
+        你是一个专业的知识库问答助手。你通过调用工具来获取回答用户问题所需的信息。
+
+        回答要求：
+        - 严格基于工具返回的内容回答，禁止编造或引用工具返回之外的文件名或信息。
+        - 回答请使用 Markdown 排版：关键结论加粗、要点用列表、必要时用小标题分级。
+
         【工具使用说明】
         你拥有两个工具，请按需自主调用：
         1. search_knowledge_base(query)：检索知识库，返回与查询相关的文档片段。当用户问题可能涉及知识库内容时，优先调用此工具。
-        2. search_web(query)：联网搜索最新信息。仅当知识库没有相关内容、或需要实时/最新信息时才调用。
-        工作流程：先尝试检索知识库；若知识库内容不足以回答，再联网搜索；若两者都没有相关信息，请明确说明"该知识库中暂无相关信息"。
-        最终回答必须严格基于工具返回的内容，并注明信息来源的文件名。
+        2. search_web(query)：联网搜索最新信息。
+
+        严格的调用规则：
+        - 先调用 search_knowledge_base。
+        - 如果 search_knowledge_base 返回「知识库中没有检索到相关内容」、或返回的内容不足以回答用户问题，你必须继续调用 search_web，不得在此时直接结束回答。
+        - 只有当 search_web 也返回「联网搜索没有返回结果」或「无联网权限」时，你才可以向用户说明「该知识库中暂无相关信息」。
+        - 最终回答必须严格基于工具返回的内容，并注明信息来源的文件名。
         """;
 
     private final DashScopeService dashScope;
@@ -75,11 +85,8 @@ public class AgentService {
             kbTool(retrievalMode, chunks),
             webTool(webAllowed, chunks));
 
-        String basePrompt = config.get(ConfigService.KEY_SYSTEM_PROMPT, ConfigService.DEFAULT_SYSTEM_PROMPT);
-        String systemPrompt = basePrompt + "\n\n" + AGENT_TOOL_INSTRUCTIONS;
-
         List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(systemPrompt));
+        messages.add(new SystemMessage(AGENT_SYSTEM_PROMPT));
         messages.add(new UserMessage(question));
 
         int maxIterations = config.getInt("agent.max-iterations", 5);
@@ -114,7 +121,7 @@ public class AgentService {
                     String result = executeTool(tc.name(), query, retrievalMode, webAllowed, chunks);
                     responses.add(new ToolResponseMessage.ToolResponse(tc.id(), tc.name(), result));
                 }
-                messages.add(new ToolResponseMessage(responses));
+                messages.add(ToolResponseMessage.builder().responses(responses).build());
                 continue;
             }
 
@@ -159,7 +166,7 @@ public class AgentService {
 
     private String searchKnowledgeBase(String query, String retrievalMode, List<SearchResult> chunks) {
         List<SearchResult> results = retrievalService.retrieve(query, retrievalMode).results();
-        if (results.isEmpty()) return "知识库中没有检索到相关内容。";
+        if (results.isEmpty()) return "知识库中没有检索到相关内容。请继续调用 search_web 联网搜索最新信息。";
         chunks.addAll(results);
         return formatChunks(results, config.getInt("agent.chunk-limit", 5));
     }
