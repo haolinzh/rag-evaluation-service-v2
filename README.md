@@ -28,6 +28,7 @@
   - [4. API 接口](#4-api-接口)
   - [5. 检索模式与 RRF](#5-检索模式与-rrf)
   - [6. PDF Chunk 策略](#6-pdf-chunk-策略)
+- [架构与设计取舍](docs/architecture.md)
 
 ---
 
@@ -405,6 +406,8 @@ RRF_score(d) = Σ 1 / (k + rank_i(d))
 ```
 
 同时出现在 ES 与向量结果前列的 chunk 得分自然放大；只出现在单一列表的 chunk 仍会保留贡献。确定性、零额外 API 成本、零额外延迟。
+
+> 更完整的关键设计取舍（RRF vs 加权、双写向量库、单节点 ES、热配置、Agent 安全边界等）见 [docs/architecture.md](docs/architecture.md)。
 
 ### 3. 项目结构
 

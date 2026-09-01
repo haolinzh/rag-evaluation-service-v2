@@ -570,7 +570,9 @@ public class ChatService {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
 
-            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", null, null, null, viewer);
+            String retrievedChunksJson = serializeChunks(chunks, true);
+            String promptForLog = piiService.redact(result.prompt());
+            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, viewer);
 
             boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
             List<Source> sources = buildSources(chunks, noInfo);
@@ -630,7 +632,9 @@ public class ChatService {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
 
-            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", null, null, null, viewer);
+            String retrievedChunksJson = serializeChunks(chunks, true);
+            String promptForLog = piiService.redact(result.prompt());
+            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, viewer);
 
             boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
             List<Source> sources = buildSources(chunks, noInfo);
