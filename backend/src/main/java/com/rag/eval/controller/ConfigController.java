@@ -24,6 +24,7 @@ public class ConfigController {
     private static final String K_RERANK_CAND = "retrieval.rerank-candidates";
     private static final String K_SIM_THRESHOLD = "retrieval.similarity-threshold";
     private static final String K_QUERY_REWRITE_ENABLED = "retrieval.query-rewrite-enabled";
+    private static final String K_CONTEXTUAL_RETRIEVAL_ENABLED = "retrieval.contextual-retrieval-enabled";
     private static final String K_CHAT_MODEL = "dashscope.chat-model";
     private static final String K_EMB_MODEL = "dashscope.embedding-model";
     private static final String K_RERANK_MODEL = "dashscope.rerank-model";
@@ -110,6 +111,7 @@ public class ConfigController {
         changes.put(K_RERANK_CAND, String.valueOf(r.rerankCandidates()));
         changes.put(K_SIM_THRESHOLD, String.valueOf(r.similarityThreshold()));
         changes.put(K_QUERY_REWRITE_ENABLED, String.valueOf(r.queryRewriteEnabled()));
+        changes.put(K_CONTEXTUAL_RETRIEVAL_ENABLED, String.valueOf(r.contextualRetrievalEnabled()));
         changes.put(K_CHAT_MODEL, m.chat());
         changes.put(K_EMB_MODEL, m.embedding());
         changes.put(K_RERANK_MODEL, m.rerank());
@@ -236,7 +238,8 @@ public class ConfigController {
                 config.getInt(K_RRF_K, 60),
                 config.getInt(K_RERANK_CAND, 20),
                 config.getDouble(K_SIM_THRESHOLD, 0.4),
-                config.getBool(K_QUERY_REWRITE_ENABLED, true)),
+                config.getBool(K_QUERY_REWRITE_ENABLED, true),
+                config.getBool(K_CONTEXTUAL_RETRIEVAL_ENABLED, true)),
             new SystemConfigDto.Models(
                 config.get(K_CHAT_MODEL, "qwen-turbo"),
                 config.get(K_EMB_MODEL, "text-embedding-v3"),

@@ -116,6 +116,7 @@ public class ChatService {
         String retrievedChunksJson = null;
         String rerankCandidatesJson = null;
         String promptForLog = null;
+        String rewrittenQuery = null;
 
         try {
             // 1. Check semantic cache
@@ -138,7 +139,7 @@ public class ChatService {
                 ChatResponse cachedResponse = deserializeCached(cached, effectiveMode);
                 metrics.setAnswerCompliance(complianceScore(cachedResponse.getContent(), false));
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, viewer);
+                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, rewrittenQuery, viewer);
 
                 persistTurn(sessionId, question, cachedResponse.getContent(), cachedResponse.getThinking(),
                     cachedResponse.getRetrievalMode(), cachedResponse.getSources(), cachedResponse.isRefusal(), viewer);
@@ -151,6 +152,7 @@ public class ChatService {
             QueryRewriteService.RewriteResult rw = queryRewriteService.rewrite(question, history);
             String retrievalQuery = rw.query();
             if (rw.rewritten()) {
+                rewrittenQuery = rw.query();
                 llmCallCount++;
                 metrics.setPromptTokens(metrics.getPromptTokens() + rw.promptTokens());
                 metrics.setCompletionTokens(metrics.getCompletionTokens() + rw.completionTokens());
@@ -199,7 +201,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, rewrittenQuery, viewer);
 
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
 
@@ -255,7 +257,7 @@ public class ChatService {
             // 7. Final metrics
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, answerText, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, viewer);
+            logRequest(metrics, question, answerText, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, rewrittenQuery, viewer);
 
             // 8. Build sources
             boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
@@ -304,7 +306,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, rewrittenQuery, viewer);
 
             Map<String, Object> errorFields = new LinkedHashMap<>();
             errorFields.put("event", "error");
@@ -347,6 +349,7 @@ public class ChatService {
         String retrievedChunksJson = null;
         String rerankCandidatesJson = null;
         String promptForLog = null;
+        String rewrittenQuery = null;
 
         try {
             // 1. Semantic cache
@@ -369,7 +372,7 @@ public class ChatService {
                 ChatResponse cachedResponse = deserializeCached(cached, effectiveMode);
                 metrics.setAnswerCompliance(complianceScore(cachedResponse.getContent(), false));
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, viewer);
+                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, rewrittenQuery, viewer);
 
                 persistTurn(sessionId, question, cachedResponse.getContent(), cachedResponse.getThinking(),
                     cachedResponse.getRetrievalMode(), cachedResponse.getSources(), cachedResponse.isRefusal(), viewer);
@@ -385,6 +388,7 @@ public class ChatService {
             QueryRewriteService.RewriteResult rw = queryRewriteService.rewrite(question, history);
             String retrievalQuery = rw.query();
             if (rw.rewritten()) {
+                rewrittenQuery = rw.query();
                 llmCallCount++;
                 metrics.setPromptTokens(metrics.getPromptTokens() + rw.promptTokens());
                 metrics.setCompletionTokens(metrics.getCompletionTokens() + rw.completionTokens());
@@ -433,7 +437,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, rewrittenQuery, viewer);
 
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
 
@@ -502,7 +506,7 @@ public class ChatService {
             // 7. Final metrics + log
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, redacted, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, viewer);
+            logRequest(metrics, question, redacted, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, rewrittenQuery, viewer);
 
             // 8. Build sources
             boolean noInfo = NO_INFO_PAT.matcher(redacted).find();
@@ -532,7 +536,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, rewrittenQuery, viewer);
 
             Map<String, Object> errorFields = new LinkedHashMap<>();
             errorFields.put("event", "error");
@@ -564,7 +568,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, viewer);
+                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, null, viewer);
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
                 return new ChatResponse(safe.decision().message, null, effectiveMode,
                     List.of(), true, safe.decision().name());
@@ -587,7 +591,7 @@ public class ChatService {
 
             String retrievedChunksJson = serializeChunks(chunks, true);
             String promptForLog = piiService.redact(result.prompt());
-            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, viewer);
+            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, null, viewer);
 
             boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
             List<Source> sources = buildSources(chunks, noInfo);
@@ -597,7 +601,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, null, viewer);
             log.error("Agent chat failed: {}", e.getMessage(), e);
             throw e;
         } finally {
@@ -624,7 +628,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, viewer);
+                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, null, viewer);
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
                 emitContent(emitter, safe.decision().message);
                 emitDone(emitter, new ChatResponse(safe.decision().message, null, effectiveMode,
@@ -649,7 +653,7 @@ public class ChatService {
 
             String retrievedChunksJson = serializeChunks(chunks, true);
             String promptForLog = piiService.redact(result.prompt());
-            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, viewer);
+            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, null, viewer);
 
             boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
             List<Source> sources = buildSources(chunks, noInfo);
@@ -661,7 +665,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, null, viewer);
             log.error("Agent chat stream failed: {}", e.getMessage(), e);
             emitError(emitter, e.getMessage() == null ? "未知错误" : e.getMessage());
         } finally {
@@ -925,7 +929,7 @@ public class ChatService {
     private void logRequest(OpsMetrics m, String question, String answer, String hitDocuments,
                             int llmCallCount, String status, String chatMode,
                             String retrievedChunks, String rerankCandidates, String prompt,
-                            AuthenticatedUser viewer) {
+                            String rewrittenQuery, AuthenticatedUser viewer) {
         RequestLog log = new RequestLog();
         log.setRequestId(m.getRequestId());
         log.setSessionId(m.getSessionId());
@@ -934,6 +938,7 @@ public class ChatService {
             log.setOwnerUsername(viewer.username());
         }
         log.setQuestion(piiService.redact(question));
+        log.setRewrittenQuery(rewrittenQuery);
         log.setAnswer(answer);
         log.setModel("agent".equals(chatMode)
             ? configService.get("agent.model", "qwen-plus")

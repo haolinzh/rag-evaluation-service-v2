@@ -137,6 +137,7 @@ export interface RequestLog {
   ownerUsername: string | null;
   createdAt: string;
   question: string;
+  rewrittenQuery?: string | null;
   answer: string | null;
   model: string;
   retrievalMode: string;
@@ -186,6 +187,7 @@ export interface SystemConfig {
     rerankCandidates: number;
     similarityThreshold: number;
     queryRewriteEnabled: boolean;
+    contextualRetrievalEnabled: boolean;
   };
   models: { chat: string; embedding: string; rerank: string };
   safety: {

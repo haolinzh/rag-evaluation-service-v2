@@ -18,6 +18,7 @@ interface FormValues {
   rerankCandidates: number;
   similarityThreshold: number;
   queryRewriteEnabled: boolean;
+  contextualRetrievalEnabled: boolean;
   chat: string;
   embedding: string;
   rerank: string;
@@ -91,6 +92,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
           rerankCandidates: c.retrieval.rerankCandidates,
           similarityThreshold: c.retrieval.similarityThreshold,
           queryRewriteEnabled: c.retrieval.queryRewriteEnabled,
+          contextualRetrievalEnabled: c.retrieval.contextualRetrievalEnabled,
           chat: c.models.chat,
           embedding: c.models.embedding,
           rerank: c.models.rerank,
@@ -171,6 +173,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
         rerankCandidates: v.rerankCandidates,
         similarityThreshold: v.similarityThreshold,
         queryRewriteEnabled: v.queryRewriteEnabled,
+        contextualRetrievalEnabled: v.contextualRetrievalEnabled,
       },
       models: { chat: v.chat, embedding: v.embedding, rerank: v.rerank },
       judge: { enabled: v.judgeEnabled, model: v.judgeModel, temperature: v.judgeTemperature },
@@ -456,6 +459,16 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
                 </Col>
                 <Col span={8}>
                   <Form.Item label="查询改写 (多轮指代消解)" name="queryRewriteEnabled" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    label="上下文检索 (Contextual Retrieval)"
+                    name="contextualRetrievalEnabled"
+                    valuePropName="checked"
+                    extra="embedding 时拼上「文件名+章节」前缀；改动后需重建向量索引才生效。"
+                  >
                     <Switch />
                   </Form.Item>
                 </Col>

@@ -20,7 +20,7 @@ public record SystemConfigDto(
 ) {
     public record Retrieval(String mode, int topK, int recallSizeMultiplier, int rrfK,
                             int rerankCandidates, double similarityThreshold,
-                            boolean queryRewriteEnabled) {}
+                            boolean queryRewriteEnabled, boolean contextualRetrievalEnabled) {}
 
     public record Models(String chat, String embedding, String rerank) {}
 

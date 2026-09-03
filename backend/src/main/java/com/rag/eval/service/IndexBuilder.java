@@ -21,15 +21,18 @@ public class IndexBuilder {
     private final ElasticsearchClient esClient;
     private final com.rag.eval.repository.VectorChunkRepo vectorChunkRepo;
     private final DashScopeService dashScope;
+    private final ConfigService config;
     private final String esIndexName;
 
     public IndexBuilder(ElasticsearchClient esClient,
                         com.rag.eval.repository.VectorChunkRepo vectorChunkRepo,
                         DashScopeService dashScope,
+                        ConfigService config,
                         @Value("${elasticsearch.index-name}") String esIndexName) {
         this.esClient = esClient;
         this.vectorChunkRepo = vectorChunkRepo;
         this.dashScope = dashScope;
+        this.config = config;
         this.esIndexName = esIndexName;
     }
 
@@ -61,8 +64,11 @@ public class IndexBuilder {
     }
 
     /** Contextual Retrieval：embedding 输入拼上「文件名 + 章节」前缀，
-     *  使向量携带语境信息；存储的 content 字段保持不变。 */
+     *  使向量携带语境信息；存储的 content 字段保持不变。开关关闭时退回纯原文。 */
     private String contextualText(ChunkData c) {
+        if (!config.getBool("retrieval.contextual-retrieval-enabled", true)) {
+            return c.getContent();
+        }
         StringBuilder s = new StringBuilder(c.getFileName());
         if (c.getChapter() != null && !c.getChapter().isBlank()) s.append(" · ").append(c.getChapter());
         if (c.getSection() != null && !c.getSection().isBlank()) s.append(" · ").append(c.getSection());
