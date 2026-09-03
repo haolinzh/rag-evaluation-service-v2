@@ -203,7 +203,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
         {/* 版本演进 */}
         <Card
           title="版本演进"
-          extra={<Tag color="blue">v1.0-delivery → v2.0.1</Tag>}
+          extra={<Tag color="blue">v2.0.0 → v2.0.1</Tag>}
           style={{ marginBottom: 16, borderRadius: 12 }}
         >
           {changelog.map((g, idx) => (
@@ -225,12 +225,8 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
           <Descriptions column={{ xs: 1, sm: 2 }} size="small" bordered>
             <Descriptions.Item label="项目名称">RAG 评测服务 v2</Descriptions.Item>
             <Descriptions.Item label="版本">v2.0.1</Descriptions.Item>
-            <Descriptions.Item label="交付基线" span={2}>tag v1.0-delivery（commit d29e8eb）</Descriptions.Item>
             <Descriptions.Item label="项目简介" span={2}>
-              <a href="https://github.com/haolinzh/rag-evaluation-service" target="_blank" rel="noopener noreferrer">
-                rag-evaluation-service
-              </a>
-              {' '}的 v2 迭代版，在原 case study 交付版本基础上继续演进。
+              RAG + generative AI evaluation service: hybrid retrieval (ES + pgvector + RRF), safety gate, PII redaction, semantic cache, ops metrics report
             </Descriptions.Item>
             <Descriptions.Item label="代码仓库" span={2}>
               <a href="https://github.com/haolinzh/rag-evaluation-service-v2" target="_blank" rel="noopener noreferrer">

@@ -54,7 +54,7 @@
 | 症状 | 排查 |
 |---|---|
 | 扫描件 chunk 数为 0 | 仅文本层为空的 PDF 才走 OCR。确认 `ocr.enabled=true`；`GET /api/documents/{id}/chunks` 看是否 0 块 |
-| 扫描件 OCR 出来是英文乱码 | 语言包未生效。容器内 `docker exec rag-evaluation-service-backend-1 tesseract --list-langs` 应有 `chi_sim`；OCR 走 PDFBox 渲染 + `tesseract -l chi_sim+eng`，不是 Tika 内置 eng OCR |
+| 扫描件 OCR 出来是英文乱码 | 语言包未生效。容器内 `docker exec rag-evaluation-service-v2-backend-1 tesseract --list-langs` 应有 `chi_sim`；OCR 走 PDFBox 渲染 + `tesseract -l chi_sim+eng`，不是 Tika 内置 eng OCR |
 | 扫描件 `source_type` 仍是 `digital` | 说明走了文本提取而非 OCR 分支。确认 PDF 确实无文本层（如 `pypdf` 提取为空）；见 `ISSUE_DIAGNOSIS.md` 问题 5 |
 
 ---

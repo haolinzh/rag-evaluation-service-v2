@@ -3,7 +3,7 @@ server:
 
 spring:
   application:
-    name: rag-evaluation-service
+    name: rag-evaluation-service-v2
   servlet:
     multipart:
       max-file-size: 500MB
