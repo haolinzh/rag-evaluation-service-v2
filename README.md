@@ -16,6 +16,7 @@
   - [3. 一键启动](#3-一键启动)
   - [4. 语料入库](#4-语料入库)
   - [5. 访问前端](#5-访问前端)
+  - [6. 一键初始化 Demo 数据](#6-一键初始化-demo-数据)
 - [交付文档](#交付文档)
   - [1. 评测](#1-评测)
   - [2. 运维指标报告](#2-运维指标报告)
@@ -69,6 +70,7 @@
 | **一键评测** | 前端「测评」页一键跑测试题，对比 hybrid / vector / hybrid-rerank 三模式，SSE 实时进度 + 5 项质量指标对比；支持后台运行、按题型筛选 |
 | **评测结果持久化** | 每次评测报告持久化到 PostgreSQL（`evaluation_run` 表），进入测评页可回看任意历史测评 |
 | **语料自动入库** | 测评开始前自动检查 8 份 case study 语料，缺失的自动解析/分块/向量化并双写 ES（含 dense_vector）+ pgvector，无需手动上传 |
+| **一键初始化 Demo 数据** | 「系统配置」页顶部一键完成：入库演示文档并分块 + 创建演示权限/角色/用户（`demo`/`demo123`）+ 触发一次评测，SSE 实时进度、幂等可重复执行，方便新用户快速上手 |
 | **文档异步入库** | 上传即返回 `PENDING`，后台线程解析+分块+向量化+双写，完成后标 `READY`、失败标 `FAILED`；前端轮询自动刷新，大文件上传不再卡 UI |
 | **文档重切分** | 文档管理页可编辑切分方式 / chunk 大小 / overlap，保存后清旧向量并重新分块+向量化（复用原文件，无需重传） |
 | **向量库可切换** | 语义检索后端支持 pgvector / Elasticsearch dense_vector 运行时切换，入库双写两库、切换即时生效无需重新入库；索引类型/lists 等建索引参数改动后一键重建 |
@@ -85,7 +87,23 @@
 
 ## 版本演进
 
-> 交付基线 `v1.0-delivery`（旧项目 case study 交付版）→ 本仓库持续迭代 → **`v2.0.0`**（首个正式版本，2026-09-01）
+> 交付基线 `v1.0-delivery`（旧项目 case study 交付版）→ 本仓库持续迭代 → `v2.0.0`（首个正式版本，2026-09-01）→ **`v2.0.1`**（当前版本，2026-09-03）
+
+### v2.0.1 增量（2026-09-03）
+
+**1. RAG 检索增强**
+- 多轮查询改写（Query Rewrite）：检索前结合对话历史把「它 / 这个」等指代改写成独立可检索 query；运行时开关 `retrieval.query-rewrite-enabled`（默认开），失败自动回退原始问题
+- 上下文检索（Contextual Retrieval）：embedding 时拼「文件名 + 章节」前缀 + 跨 chunk 章节追踪（修复章节元数据大量缺失）；开关 `retrieval.contextual-retrieval-enabled`（默认开）
+
+**2. Demo 一键初始化**
+- 新增 `POST /api/demo/init`（SSE）：一键完成「入库演示文档并分块 → 创建权限 / 角色 / 用户 → 触发一次测评」，重复执行安全；配置页「Demo 数据初始化」卡片
+
+**3. 评测与交互**
+- 评测运行记录当前用户名，运行名 `{username}测评#n`，历史列表展示运行名
+- 登出入口改为用户下拉菜单；对话 / 检索 / 联网控件收敛到聊天面板工具栏
+
+**4. 可观测性**
+- 请求日志新增「查询改写后 query」字段（`rewritten_query`），日志详情与检索流水线展示「查询改写」步骤
 
 ### v2.0.0 相比交付基线的核心进步
 
@@ -186,6 +204,18 @@ docker-compose ps
 | `admin` | `admin` | 管理员（拥有全部权限） |
 
 登录后可在「用户管理」「角色管理」页新增用户、分配角色；也支持自助注册新账号（固定「普通员工」角色，防提权）。
+
+### 6. 一键初始化 Demo 数据
+
+为了让新拿到项目的用户快速上手，系统提供「一键初始化」入口：登录管理员后，浏览器打开 `http://localhost:3000` → 「系统配置」页顶部「Demo 数据初始化」卡片，点「一键初始化」即可，SSE 实时展示进度。一次完成三件事：
+
+1. **入库演示文档**：检查并入库 `test-docs/` 预置的 8 份 case study 语料（解析 → 分块 → 向量化 → 双写 ES + pgvector）。
+2. **创建演示 RBAC**：新增 3 个演示权限（`document:download` / `chat:export` / `report:export`）、演示角色 `DEMO`、演示用户 `demo`（密码 `demo123`）。
+3. **触发一次评测**：跑一遍完整的三模式对比测评（`hybrid` / `vector` / `hybrid-rerank`），结果落入「测评」页历史。
+
+整个过程**幂等**：文档、权限、角色、用户均已存在时会自动跳过，可安全重复执行。初始化完成后可切换到 `demo` 账号体验只读知识库 + 评测 + 联网等普通用户视角。
+
+对应接口：`POST /api/demo/init`（`config:edit` 权限，SSE 流式返回 `phase` / `ingest_*` / `rbac` / 评测事件）。
 
 ---
 
@@ -492,6 +522,7 @@ rag-evaluation-service/
 | `PUT` | `/api/config/websearch/enabled` | 切换联网全局开关（`{"enabled":true/false}`，`config:edit`） |
 | `PUT` | `/api/config/websearch/apikey` | 设置/清除 Bocha 联网搜索 Key（`{"apiKey":"..."}`，空值清除，`config:edit`） |
 | `POST` | `/api/config/rebuild-vector-index` | 重建向量索引（按当前配置重新入库 pgvector + ES） |
+| `POST` | `/api/demo/init` | 一键初始化 Demo 数据（SSE：入库演示文档 + 创建演示 RBAC + 触发一次评测，`config:edit`） |
 | `GET` | `/api/evaluation/questions` | 读取评测测试集（`evaluation_question` 表） |
 | `POST` | `/api/evaluation/questions` | 新增测试题 |
 | `PUT` | `/api/evaluation/questions/{id}` | 更新测试题 |

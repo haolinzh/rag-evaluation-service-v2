@@ -175,6 +175,12 @@ const renderPipeline = (r: RequestLog) => {
   const finalNonWeb = finalChunks.length - webCount;
 
   const steps: { title: string; description: string }[] = [];
+  if (r.rewrittenQuery) {
+    steps.push({
+      title: '查询改写',
+      description: r.rewrittenQuery.length > 40 ? r.rewrittenQuery.slice(0, 40) + '…' : r.rewrittenQuery,
+    });
+  }
   if (r.retrievalMode === 'vector') {
     steps.push({ title: '向量召回', description: `${r.vectorCount} 条` });
   } else {
@@ -315,6 +321,11 @@ const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
               <Descriptions.Item label="对话模式">{r.chatMode === 'agent' ? 'agent' : 'workflow'}</Descriptions.Item>
               <Descriptions.Item label="模型">{r.model}</Descriptions.Item>
               <Descriptions.Item label="问题" span={2}>{r.question}</Descriptions.Item>
+              {r.rewrittenQuery && (
+                <Descriptions.Item label="查询改写后 query" span={2}>
+                  <span style={{ color: '#1677ff' }}>{r.rewrittenQuery}</span>
+                </Descriptions.Item>
+              )}
               <Descriptions.Item label="回答" span={2}>{r.answer ?? '—'}</Descriptions.Item>
               <Descriptions.Item label="命中文档" span={2}>{r.hitDocuments || '—'}</Descriptions.Item>
               <Descriptions.Item label="召回 chunk" span={2}>{renderChunks(r.retrievedChunks)}</Descriptions.Item>

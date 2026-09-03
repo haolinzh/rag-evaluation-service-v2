@@ -21,15 +21,18 @@ public class IndexBuilder {
     private final ElasticsearchClient esClient;
     private final com.rag.eval.repository.VectorChunkRepo vectorChunkRepo;
     private final DashScopeService dashScope;
+    private final ConfigService config;
     private final String esIndexName;
 
     public IndexBuilder(ElasticsearchClient esClient,
                         com.rag.eval.repository.VectorChunkRepo vectorChunkRepo,
                         DashScopeService dashScope,
+                        ConfigService config,
                         @Value("${elasticsearch.index-name}") String esIndexName) {
         this.esClient = esClient;
         this.vectorChunkRepo = vectorChunkRepo;
         this.dashScope = dashScope;
+        this.config = config;
         this.esIndexName = esIndexName;
     }
 
@@ -48,7 +51,7 @@ public class IndexBuilder {
         for (int i = 0; i < chunks.size(); i += batchSize) {
             int end = Math.min(i + batchSize, chunks.size());
             List<ChunkData> batch = chunks.subList(i, end);
-            List<String> texts = batch.stream().map(ChunkData::getContent).toList();
+            List<String> texts = batch.stream().map(this::contextualText).toList();
             all.addAll(dashScope.embedBatch(texts));
             log.info("Embedded {}/{} chunks", end, chunks.size());
         }
@@ -58,6 +61,18 @@ public class IndexBuilder {
         }
         log.info("Embedding complete.");
         return all;
+    }
+
+    /** Contextual Retrieval：embedding 输入拼上「文件名 + 章节」前缀，
+     *  使向量携带语境信息；存储的 content 字段保持不变。开关关闭时退回纯原文。 */
+    private String contextualText(ChunkData c) {
+        if (!config.getBool("retrieval.contextual-retrieval-enabled", true)) {
+            return c.getContent();
+        }
+        StringBuilder s = new StringBuilder(c.getFileName());
+        if (c.getChapter() != null && !c.getChapter().isBlank()) s.append(" · ").append(c.getChapter());
+        if (c.getSection() != null && !c.getSection().isBlank()) s.append(" · ").append(c.getSection());
+        return s.append("\n").append(c.getContent()).toString();
     }
 
     /** Dual-write embedded chunks to ES + pgvector. */

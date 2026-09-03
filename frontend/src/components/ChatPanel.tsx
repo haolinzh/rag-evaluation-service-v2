@@ -30,6 +30,7 @@ interface Session {
 
 interface Props {
   retrievalMode: string;
+  onRetrievalModeChange: (mode: string) => void;
   isGuest: boolean;
   canWebSearch: boolean;
   chatMode: 'workflow' | 'agent';
@@ -83,7 +84,7 @@ const parseSources = (raw?: string | null): Source[] | undefined => {
 const toolLabel = (tool: string) =>
   tool === 'search_knowledge_base' ? '检索知识库' : tool === 'search_web' ? '联网搜索' : tool;
 
-const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch, chatMode: defaultChatMode }) => {
+const ChatPanel: React.FC<Props> = ({ retrievalMode, onRetrievalModeChange, isGuest, canWebSearch, chatMode: defaultChatMode }) => {
   const initialRef = useRef<{ sessions: Session[]; activeId: string } | null>(null);
   if (initialRef.current === null) {
     const stored = readStored();
@@ -328,7 +329,6 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch, chat
             <div style={{ textAlign: 'center', color: '#999', marginTop: 120 }}>
               <RobotOutlined style={{ fontSize: 48 }} />
               <p>向知识库提问，开始对话</p>
-              <Tag color="blue">检索模式: {retrievalMode}</Tag>
             </div>
           )}
           {active && active.messages.map(msg => (
@@ -417,33 +417,54 @@ const ChatPanel: React.FC<Props> = ({ retrievalMode, isGuest, canWebSearch, chat
           <div ref={messagesEndRef} />
         </div>
 
-        <div style={{ padding: '0 12px 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Segmented
-            size="small"
-            value={chatMode}
-            onChange={(v) => setChatMode(v as 'workflow' | 'agent')}
-            options={[
-              { label: 'Workflow', value: 'workflow' },
-              { label: 'Agent', value: 'agent' },
-            ]}
-          />
-          <Text type="secondary" style={{ fontSize: 12 }}>Agent：由 LLM 自主决定检索与联网</Text>
-        </div>
-        {canWebSearch && (
-          <div style={{ padding: '0 12px 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: '0 12px 6px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <Space size={8}>
+            <Text type="secondary" style={{ fontSize: 14 }}>对话</Text>
             <Segmented
-              size="small"
-              value={webSearch}
-              onChange={(v) => setWebSearch(v as 'auto' | 'on' | 'off')}
+              value={chatMode}
+              onChange={(v) => setChatMode(v as 'workflow' | 'agent')}
               options={[
-                { label: '自动', value: 'auto' },
-                { label: '联网', value: 'on' },
-                { label: '仅知识库', value: 'off' },
+                { label: 'Workflow', value: 'workflow' },
+                { label: 'Agent', value: 'agent' },
               ]}
             />
-            <Text type="secondary" style={{ fontSize: 12 }}>自动：知识库不足时联网补充</Text>
-          </div>
-        )}
+          </Space>
+          <Space size={8}>
+            <Text type="secondary" style={{ fontSize: 14 }}>检索</Text>
+            <Segmented
+              value={retrievalMode}
+              onChange={(v) => onRetrievalModeChange(v as string)}
+              options={[
+                { label: 'Hybrid', value: 'hybrid' },
+                { label: 'Vector', value: 'vector' },
+                { label: 'Hybrid+Rerank', value: 'hybrid-rerank' },
+              ]}
+            />
+          </Space>
+          {canWebSearch && (
+            <Space size={8}>
+              <Text type="secondary" style={{ fontSize: 14 }}>联网</Text>
+              <Segmented
+                value={webSearch}
+                onChange={(v) => setWebSearch(v as 'auto' | 'on' | 'off')}
+                disabled={chatMode === 'agent'}
+                options={[
+                  { label: '自动', value: 'auto' },
+                  { label: '联网', value: 'on' },
+                  { label: '仅知识库', value: 'off' },
+                ]}
+              />
+            </Space>
+          )}
+        </div>
+        <div style={{ padding: '0 12px 8px' }}>
+          <Text type="secondary" style={{ fontSize: 13, display: 'block' }}>
+            {chatMode === 'agent'
+              ? 'Agent：由 LLM 自主决定何时检索与联网。它会通过工具调用按需检索知识库或联网搜索，检索方式仅作为知识库检索的默认策略。'
+              : 'Workflow：按固定流水线执行，检索与生成由你配置。'
+                + (canWebSearch ? '自动联网会在知识库置信度不足时联网补充。' : '')}
+          </Text>
+        </div>
         <div style={{ display: 'flex', gap: 8, paddingRight: 12, paddingBottom: 12 }}>
           <TextArea
             value={input}

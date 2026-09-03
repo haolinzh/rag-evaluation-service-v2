@@ -37,6 +37,9 @@ public class RequestLog {
     @Column(columnDefinition = "TEXT")
     private String question;
 
+    @Column(name = "rewritten_query", columnDefinition = "TEXT")
+    private String rewrittenQuery;
+
     @Column(columnDefinition = "TEXT")
     private String answer;
 

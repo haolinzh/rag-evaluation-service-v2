@@ -55,6 +55,7 @@ public class ChatService {
     private final ConfigService configService;
     private final WebSearchService webSearchService;
     private final AgentService agentService;
+    private final QueryRewriteService queryRewriteService;
 
     public ChatService(DashScopeService dashScope,
                        RetrievalService retrievalService,
@@ -70,7 +71,8 @@ public class ChatService {
                        AuthService authService,
                        ConfigService configService,
                        WebSearchService webSearchService,
-                       AgentService agentService) {
+                       AgentService agentService,
+                       QueryRewriteService queryRewriteService) {
         this.dashScope = dashScope;
         this.retrievalService = retrievalService;
         this.safetyService = safetyService;
@@ -86,6 +88,7 @@ public class ChatService {
         this.configService = configService;
         this.webSearchService = webSearchService;
         this.agentService = agentService;
+        this.queryRewriteService = queryRewriteService;
     }
 
     public ChatResponse ask(String question, String sessionId, String mode, String webSearch, String chatMode, AuthenticatedUser viewer) {
@@ -100,7 +103,6 @@ public class ChatService {
 
         String effectiveMode = retrievalService.resolveMode(mode);
         String webMode = normalizeWebSearch(webSearch);
-        boolean cacheable = "off".equals(webMode);
         String cacheScope = cacheScope(viewer);
 
         OpsMetrics metrics = metricsCollector.startRequest(sessionId, effectiveMode);
@@ -114,13 +116,14 @@ public class ChatService {
         String retrievedChunksJson = null;
         String rerankCandidatesJson = null;
         String promptForLog = null;
+        String rewrittenQuery = null;
 
         try {
             // 1. Check semantic cache
             String normalized = normalizeQuery(question);
             Instant cacheStart = Instant.now();
-            String cached = cacheable
-                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope) : null;
+            String cached = !"on".equals(webMode)
+                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope, webMode) : null;
             boolean cacheHit = cached != null;
             long cacheLookupLatencyMs = Duration.between(cacheStart, Instant.now()).toMillis();
             metrics.setCacheLookupLatencyMs(cacheLookupLatencyMs);
@@ -136,7 +139,7 @@ public class ChatService {
                 ChatResponse cachedResponse = deserializeCached(cached, effectiveMode);
                 metrics.setAnswerCompliance(complianceScore(cachedResponse.getContent(), false));
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, viewer);
+                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, rewrittenQuery, viewer);
 
                 persistTurn(sessionId, question, cachedResponse.getContent(), cachedResponse.getThinking(),
                     cachedResponse.getRetrievalMode(), cachedResponse.getSources(), cachedResponse.isRefusal(), viewer);
@@ -145,8 +148,17 @@ public class ChatService {
             }
 
             // 2. Retrieve
+            List<ChatMessage> history = loadHistory(sessionId, viewer);
+            QueryRewriteService.RewriteResult rw = queryRewriteService.rewrite(question, history);
+            String retrievalQuery = rw.query();
+            if (rw.rewritten()) {
+                rewrittenQuery = rw.query();
+                llmCallCount++;
+                metrics.setPromptTokens(metrics.getPromptTokens() + rw.promptTokens());
+                metrics.setCompletionTokens(metrics.getCompletionTokens() + rw.completionTokens());
+            }
             Instant retrievalStart = Instant.now();
-            RetrievalService.RetrievalResult rr = retrievalService.retrieve(question, effectiveMode);
+            RetrievalService.RetrievalResult rr = retrievalService.retrieve(retrievalQuery, effectiveMode);
             List<SearchResult> chunks = filterVisible(rr.results(), viewer);
             if (shouldWebSearch(webMode, chunks, viewer)) {
                 metrics.setWebSearchUsed(true);
@@ -189,7 +201,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, rewrittenQuery, viewer);
 
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
 
@@ -202,7 +214,6 @@ public class ChatService {
                 .map(doc -> "【来源: " + doc.getFileName() + "】\n" + doc.getContent())
                 .collect(Collectors.joining("\n\n"));
 
-            List<ChatMessage> history = loadHistory(sessionId, viewer);
             String historyContext = !history.isEmpty()
                 ? "=== 对话历史 ===\n" + history.stream()
                     .limit(10)
@@ -246,7 +257,7 @@ public class ChatService {
             // 7. Final metrics
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, answerText, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, viewer);
+            logRequest(metrics, question, answerText, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, rewrittenQuery, viewer);
 
             // 8. Build sources
             boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
@@ -263,8 +274,8 @@ public class ChatService {
             ChatResponse response = new ChatResponse(answerText, gen.thinking(), effectiveMode, sources, false, null);
 
             // 9. Cache (store full response so cache hits still return sources)
-            if (cacheable) {
-                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope);
+            if (shouldCache(webMode, metrics.isWebSearchUsed())) {
+                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope, webMode);
             }
 
             // 10. Save history
@@ -295,7 +306,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, rewrittenQuery, viewer);
 
             Map<String, Object> errorFields = new LinkedHashMap<>();
             errorFields.put("event", "error");
@@ -325,7 +336,6 @@ public class ChatService {
 
         String effectiveMode = retrievalService.resolveMode(mode);
         String webMode = normalizeWebSearch(webSearch);
-        boolean cacheable = "off".equals(webMode);
         String cacheScope = cacheScope(viewer);
 
         OpsMetrics metrics = metricsCollector.startRequest(sessionId, effectiveMode);
@@ -339,13 +349,14 @@ public class ChatService {
         String retrievedChunksJson = null;
         String rerankCandidatesJson = null;
         String promptForLog = null;
+        String rewrittenQuery = null;
 
         try {
             // 1. Semantic cache
             String normalized = normalizeQuery(question);
             Instant cacheStart = Instant.now();
-            String cached = cacheable
-                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope) : null;
+            String cached = !"on".equals(webMode)
+                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope, webMode) : null;
             boolean cacheHit = cached != null;
             long cacheLookupLatencyMs = Duration.between(cacheStart, Instant.now()).toMillis();
             metrics.setCacheLookupLatencyMs(cacheLookupLatencyMs);
@@ -361,7 +372,7 @@ public class ChatService {
                 ChatResponse cachedResponse = deserializeCached(cached, effectiveMode);
                 metrics.setAnswerCompliance(complianceScore(cachedResponse.getContent(), false));
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, viewer);
+                logRequest(metrics, question, cachedResponse.getContent(), "", 0, "success", "workflow", null, null, null, rewrittenQuery, viewer);
 
                 persistTurn(sessionId, question, cachedResponse.getContent(), cachedResponse.getThinking(),
                     cachedResponse.getRetrievalMode(), cachedResponse.getSources(), cachedResponse.isRefusal(), viewer);
@@ -373,8 +384,17 @@ public class ChatService {
             }
 
             // 2. Retrieve
+            List<ChatMessage> history = loadHistory(sessionId, viewer);
+            QueryRewriteService.RewriteResult rw = queryRewriteService.rewrite(question, history);
+            String retrievalQuery = rw.query();
+            if (rw.rewritten()) {
+                rewrittenQuery = rw.query();
+                llmCallCount++;
+                metrics.setPromptTokens(metrics.getPromptTokens() + rw.promptTokens());
+                metrics.setCompletionTokens(metrics.getCompletionTokens() + rw.completionTokens());
+            }
             Instant retrievalStart = Instant.now();
-            RetrievalService.RetrievalResult rr = retrievalService.retrieve(question, effectiveMode);
+            RetrievalService.RetrievalResult rr = retrievalService.retrieve(retrievalQuery, effectiveMode);
             List<SearchResult> chunks = filterVisible(rr.results(), viewer);
             if (shouldWebSearch(webMode, chunks, viewer)) {
                 metrics.setWebSearchUsed(true);
@@ -417,7 +437,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+                logRequest(metrics, question, safe.decision().message, hitDocuments, 0, "refused", "workflow", retrievedChunksJson, rerankCandidatesJson, null, rewrittenQuery, viewer);
 
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
 
@@ -432,7 +452,6 @@ public class ChatService {
                 .map(doc -> "【来源: " + doc.getFileName() + "】\n" + doc.getContent())
                 .collect(Collectors.joining("\n\n"));
 
-            List<ChatMessage> history = loadHistory(sessionId, viewer);
             String historyContext = !history.isEmpty()
                 ? "=== 对话历史 ===\n" + history.stream()
                     .limit(10)
@@ -487,7 +506,7 @@ public class ChatService {
             // 7. Final metrics + log
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, redacted, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, viewer);
+            logRequest(metrics, question, redacted, hitDocuments, llmCallCount, "success", "workflow", retrievedChunksJson, rerankCandidatesJson, promptForLog, rewrittenQuery, viewer);
 
             // 8. Build sources
             boolean noInfo = NO_INFO_PAT.matcher(redacted).find();
@@ -504,8 +523,8 @@ public class ChatService {
             ChatResponse response = new ChatResponse(redacted, thinkingText, effectiveMode, sources, false, null);
 
             // 9. Cache (store full response so cache hits still return sources + thinking)
-            if (cacheable) {
-                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope);
+            if (shouldCache(webMode, metrics.isWebSearchUsed())) {
+                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope, webMode);
             }
 
             // 10. Save history
@@ -517,7 +536,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, llmCallCount, "error", "workflow", retrievedChunksJson, rerankCandidatesJson, null, rewrittenQuery, viewer);
 
             Map<String, Object> errorFields = new LinkedHashMap<>();
             errorFields.put("event", "error");
@@ -549,7 +568,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, viewer);
+                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, null, viewer);
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
                 return new ChatResponse(safe.decision().message, null, effectiveMode,
                     List.of(), true, safe.decision().name());
@@ -572,7 +591,7 @@ public class ChatService {
 
             String retrievedChunksJson = serializeChunks(chunks, true);
             String promptForLog = piiService.redact(result.prompt());
-            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, viewer);
+            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, null, viewer);
 
             boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
             List<Source> sources = buildSources(chunks, noInfo);
@@ -582,7 +601,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, null, viewer);
             log.error("Agent chat failed: {}", e.getMessage(), e);
             throw e;
         } finally {
@@ -609,7 +628,7 @@ public class ChatService {
                 metrics.setAnswerCompliance(1.0);
                 metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
                 metricsCollector.complete(metrics);
-                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, viewer);
+                logRequest(metrics, question, safe.decision().message, "", 0, "refused", "agent", null, null, null, null, viewer);
                 persistTurn(sessionId, question, safe.decision().message, null, effectiveMode, List.of(), true, viewer);
                 emitContent(emitter, safe.decision().message);
                 emitDone(emitter, new ChatResponse(safe.decision().message, null, effectiveMode,
@@ -634,7 +653,7 @@ public class ChatService {
 
             String retrievedChunksJson = serializeChunks(chunks, true);
             String promptForLog = piiService.redact(result.prompt());
-            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, viewer);
+            logRequest(metrics, question, answerText, hitDocuments, result.llmCallCount(), "success", "agent", retrievedChunksJson, null, promptForLog, null, viewer);
 
             boolean noInfo = NO_INFO_PAT.matcher(answerText).find();
             List<Source> sources = buildSources(chunks, noInfo);
@@ -646,7 +665,7 @@ public class ChatService {
         } catch (RuntimeException e) {
             metrics.setTotalLatencyMs(Duration.between(start, Instant.now()).toMillis());
             metricsCollector.complete(metrics);
-            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, viewer);
+            logRequest(metrics, question, null, hitDocuments, 0, "error", "agent", null, null, null, null, viewer);
             log.error("Agent chat stream failed: {}", e.getMessage(), e);
             emitError(emitter, e.getMessage() == null ? "未知错误" : e.getMessage());
         } finally {
@@ -765,6 +784,12 @@ public class ChatService {
         // 默认 0.55，与 safety.out-of-scope-threshold 对齐：内部置信度低于该值会被
         // SafetyService 拒答，此时才联网补救，避免 [0.4, 0.55) 区间既不联网又被拒答。
         return maxScore < configService.getDouble("web.fallback-threshold", 0.55);
+    }
+
+    private boolean shouldCache(String webMode, boolean webUsed) {
+        // 仅知识库(off) 一定可缓存；自动(auto) 只在没实际联网时缓存，避免把联网结果缓存成纯知识库答案。
+        if ("off".equals(webMode)) return true;
+        return "auto".equals(webMode) && !webUsed;
     }
 
     private String cacheScope(AuthenticatedUser viewer) {
@@ -904,7 +929,7 @@ public class ChatService {
     private void logRequest(OpsMetrics m, String question, String answer, String hitDocuments,
                             int llmCallCount, String status, String chatMode,
                             String retrievedChunks, String rerankCandidates, String prompt,
-                            AuthenticatedUser viewer) {
+                            String rewrittenQuery, AuthenticatedUser viewer) {
         RequestLog log = new RequestLog();
         log.setRequestId(m.getRequestId());
         log.setSessionId(m.getSessionId());
@@ -913,6 +938,7 @@ public class ChatService {
             log.setOwnerUsername(viewer.username());
         }
         log.setQuestion(piiService.redact(question));
+        log.setRewrittenQuery(rewrittenQuery);
         log.setAnswer(answer);
         log.setModel("agent".equals(chatMode)
             ? configService.get("agent.model", "qwen-plus")

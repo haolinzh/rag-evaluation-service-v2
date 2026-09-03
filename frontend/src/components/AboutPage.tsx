@@ -54,6 +54,17 @@ const techStack: { icon: React.ReactNode; group: string; items: string[] }[] = [
 
 const changelog: { title: string; items: string[] }[] = [
   {
+    title: 'v2.0.1 增量：RAG 检索增强 + Demo 一键初始化',
+    items: [
+      '多轮查询改写（Query Rewrite）：检索前结合历史把「它 / 这个」等指代改写成独立可检索 query，含运行时开关，失败自动回退',
+      '上下文检索（Contextual Retrieval）：embedding 拼「文件名 + 章节」前缀 + 跨 chunk 章节追踪，含开关',
+      '两个特性可观测：配置页开关 + 请求日志「查询改写后 query」字段与检索流水线「查询改写」步骤',
+      'Demo 一键初始化：一键入库演示文档 → 创建权限 / 角色 / 用户 → 触发一次测评',
+      '评测归属与运行命名：测评记录当前用户名，运行名 {username}测评#n',
+      '登出入口改为用户下拉菜单；对话 / 检索 / 联网控件收敛到聊天面板工具栏',
+    ],
+  },
+  {
     title: '检索引擎跃迁',
     items: [
       '从单一向量检索升级为混合检索：ES BM25 关键词 + 向量语义并行召回，RRF 融合 + qwen3-rerank 精排',
@@ -126,7 +137,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
             <RobotOutlined style={{ fontSize: 56, opacity: 0.95 }} />
             <Title level={2} style={{ color: '#fff', margin: '12px 0 4px' }}>RAG 评测服务 v2</Title>
             <Space size={8} style={{ marginBottom: 12 }}>
-              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>v2.0.0</Tag>
+              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>v2.0.1</Tag>
               <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>Spring Boot 3.5.16</Tag>
               <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>React 18</Tag>
             </Space>
@@ -192,7 +203,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
         {/* 版本演进 */}
         <Card
           title="版本演进"
-          extra={<Tag color="blue">v1.0-delivery → v2.0.0</Tag>}
+          extra={<Tag color="blue">v1.0-delivery → v2.0.1</Tag>}
           style={{ marginBottom: 16, borderRadius: 12 }}
         >
           {changelog.map((g, idx) => (
@@ -213,7 +224,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
         <Card title="项目信息" style={{ borderRadius: 12 }}>
           <Descriptions column={{ xs: 1, sm: 2 }} size="small" bordered>
             <Descriptions.Item label="项目名称">RAG 评测服务 v2</Descriptions.Item>
-            <Descriptions.Item label="版本">v2.0.0</Descriptions.Item>
+            <Descriptions.Item label="版本">v2.0.1</Descriptions.Item>
             <Descriptions.Item label="交付基线" span={2}>tag v1.0-delivery（commit d29e8eb）</Descriptions.Item>
             <Descriptions.Item label="项目简介" span={2}>
               <a href="https://github.com/haolinzh/rag-evaluation-service" target="_blank" rel="noopener noreferrer">

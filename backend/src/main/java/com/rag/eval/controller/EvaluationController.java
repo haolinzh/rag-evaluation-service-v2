@@ -1,11 +1,13 @@
 package com.rag.eval.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rag.eval.model.AuthenticatedUser;
 import com.rag.eval.model.EvaluationQuestion;
 import com.rag.eval.model.EvaluationReport;
 import com.rag.eval.model.EvaluationRequest;
 import com.rag.eval.model.EvaluationRunMeta;
 import com.rag.eval.model.JudgeConfig;
+import com.rag.eval.service.AuthService;
 import com.rag.eval.service.EvaluationQuestionService;
 import com.rag.eval.service.EvaluationService;
 import org.springframework.http.MediaType;
@@ -27,14 +29,17 @@ public class EvaluationController {
     private final EvaluationService evaluationService;
     private final EvaluationQuestionService questionService;
     private final ObjectMapper objectMapper;
+    private final AuthService authService;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     public EvaluationController(EvaluationService evaluationService,
                                 EvaluationQuestionService questionService,
-                                ObjectMapper objectMapper) {
+                                ObjectMapper objectMapper,
+                                AuthService authService) {
         this.evaluationService = evaluationService;
         this.questionService = questionService;
         this.objectMapper = objectMapper;
+        this.authService = authService;
     }
 
     @GetMapping("/questions")
@@ -99,9 +104,10 @@ public class EvaluationController {
         List<String> types = request == null ? null : request.getTypes();
         JudgeConfig judge = request == null ? new JudgeConfig(null, null)
             : new JudgeConfig(request.getJudgeEnabled(), request.getJudgeModel());
+        AuthenticatedUser viewer = authService.currentUser();
         executor.execute(() -> {
             try {
-                evaluationService.runEvaluation(modes, clearCache, judge, types, event -> send(emitter, event));
+                evaluationService.runEvaluation(modes, clearCache, judge, types, event -> send(emitter, event), viewer);
             } finally {
                 emitter.complete();
             }

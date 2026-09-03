@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, Button, List, Popconfirm, Select, Space, Typography, message, Tag, Progress, Input, InputNumber, Tooltip, Modal } from 'antd';
+import { Upload, Button, List, Popconfirm, Select, Space, Typography, message, Tag, Progress, Input, InputNumber, Tooltip, Modal, Segmented } from 'antd';
 import { DeleteOutlined, ReloadOutlined, InboxOutlined, FolderOpenOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { DocumentMeta } from '../types';
 import { uploadDocument, deleteDocument, downloadDocument } from '../api';
@@ -9,8 +9,6 @@ const { Text } = Typography;
 
 interface Props {
   documents: DocumentMeta[];
-  retrievalMode: string;
-  onModeChange: (mode: string) => void;
   onRefresh: () => void;
   onOpenManagement: () => void;
   canManageDocs: boolean;
@@ -33,7 +31,7 @@ const visibilityColor: Record<string, string> = {
   PRIVATE: 'red',
 };
 
-const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange, onRefresh, onOpenManagement, canManageDocs, onRequireLogin }) => {
+const DocumentPanel: React.FC<Props> = ({ documents, onRefresh, onOpenManagement, canManageDocs, onRequireLogin }) => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [splitMode, setSplitMode] = useState<'size' | 'delimiter'>('size');
@@ -113,22 +111,16 @@ const DocumentPanel: React.FC<Props> = ({ documents, retrievalMode, onModeChange
       <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 12 }}>文档</Typography.Title>
 
       <div style={{ marginBottom: 10 }}>
-        <div style={labelStyle}>检索模式</div>
-        <Select value={retrievalMode} onChange={onModeChange} style={{ width: '100%' }}
-          options={[
-            { value: 'hybrid', label: 'Hybrid (混合)' },
-            { value: 'vector', label: 'Vector (向量)' },
-            { value: 'hybrid-rerank', label: 'Hybrid + Rerank' },
-          ]} />
-      </div>
-
-      <div style={{ marginBottom: 10 }}>
         <div style={labelStyle}>切分方式</div>
-        <Select value={splitMode} onChange={setSplitMode} style={{ width: '100%' }}
+        <Segmented
+          block
+          value={splitMode}
+          onChange={(v) => setSplitMode(v as 'size' | 'delimiter')}
           options={[
-            { value: 'size', label: '按大小 (size)' },
-            { value: 'delimiter', label: '特殊字符 (分隔符)' },
-          ]} />
+            { value: 'size', label: '按大小' },
+            { value: 'delimiter', label: '分隔符' },
+          ]}
+        />
       </div>
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>

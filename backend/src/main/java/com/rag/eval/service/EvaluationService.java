@@ -82,14 +82,14 @@ public class EvaluationService {
     }
 
     public void runEvaluation(List<String> modes, boolean clearCache, JudgeConfig judgeConfig,
-                              List<String> types, Consumer<Map<String, Object>> onEvent) {
+                              List<String> types, Consumer<Map<String, Object>> onEvent, AuthenticatedUser viewer) {
         if (!running.compareAndSet(false, true)) {
             emit(onEvent, Map.of("type", "error", "message", "已有测评正在进行中，请稍候"));
             return;
         }
         cancelRequested.set(false);
         try {
-            doRunEvaluation(modes, clearCache, judgeConfig, types, onEvent);
+            doRunEvaluation(modes, clearCache, judgeConfig, types, onEvent, viewer);
         } finally {
             running.set(false);
             cancelRequested.set(false);
@@ -97,8 +97,9 @@ public class EvaluationService {
     }
 
     private void doRunEvaluation(List<String> modes, boolean clearCache, JudgeConfig judgeConfig,
-                                 List<String> types, Consumer<Map<String, Object>> onEvent) {
+                                 List<String> types, Consumer<Map<String, Object>> onEvent, AuthenticatedUser viewer) {
         corpusService.ensureIngested(onEvent);
+        String runName = buildRunName(viewer);
 
         List<String> effectiveModes = (modes == null || modes.isEmpty())
             ? List.of("hybrid", "vector", "hybrid-rerank")
@@ -140,7 +141,7 @@ public class EvaluationService {
 
                 EvaluationQuestionResult result;
                 try {
-                    result = evaluateOne(q, mode, embedder, judge);
+                    result = evaluateOne(q, mode, embedder, judge, viewer, runName);
                 } catch (Exception e) {
                     result = new EvaluationQuestionResult();
                     result.setQuestionId(q.getId());
@@ -172,7 +173,7 @@ public class EvaluationService {
         report.setJudgeModel(judge.model());
         report.setSummaries(summaries);
         report.setResults(allResults);
-        saveReport(report);
+        saveReport(report, runName);
         emit(onEvent, Map.of("type", "done", "report", report));
     }
 
@@ -182,9 +183,9 @@ public class EvaluationService {
                 try {
                     List<String> modes = objectMapper.readValue(r.getModes(), new TypeReference<List<String>>() {});
                     boolean judgeEnabled = r.getJudgeEnabled() != null && r.getJudgeEnabled();
-                    return new EvaluationRunMeta(r.getId(), r.getCreatedAt(), modes, judgeEnabled, r.getJudgeModel());
+                    return new EvaluationRunMeta(r.getId(), r.getCreatedAt(), modes, judgeEnabled, r.getJudgeModel(), r.getRunName());
                 } catch (Exception e) {
-                    return new EvaluationRunMeta(r.getId(), r.getCreatedAt(), List.of(), false, null);
+                    return new EvaluationRunMeta(r.getId(), r.getCreatedAt(), List.of(), false, null, r.getRunName());
                 }
             })
             .toList();
@@ -202,9 +203,10 @@ public class EvaluationService {
             .orElse(null);
     }
 
-    private void saveReport(EvaluationReport report) {
+    private void saveReport(EvaluationReport report, String runName) {
         try {
             EvaluationRun run = new EvaluationRun();
+            run.setRunName(runName);
             run.setModes(objectMapper.writeValueAsString(report.getModes()));
             run.setJudgeEnabled(report.isJudgeEnabled());
             run.setJudgeModel(report.getJudgeModel());
@@ -213,6 +215,12 @@ public class EvaluationService {
         } catch (Exception e) {
             System.err.println("Failed to persist evaluation report: " + e.getMessage());
         }
+    }
+
+    private String buildRunName(AuthenticatedUser viewer) {
+        String username = viewer != null && viewer.username() != null && !viewer.username().isBlank()
+            ? viewer.username() : "guest";
+        return username + "测评#" + (runRepo.count() + 1);
     }
 
     private String normalizeMode(String m) {
@@ -228,9 +236,10 @@ public class EvaluationService {
         return new JudgeConfig(enabled, model);
     }
 
-    private EvaluationQuestionResult evaluateOne(EvaluationQuestion q, String mode, Embedder embedder, JudgeConfig judge) {
+    private EvaluationQuestionResult evaluateOne(EvaluationQuestion q, String mode, Embedder embedder, JudgeConfig judge,
+                                                 AuthenticatedUser viewer, String runName) {
         long start = System.currentTimeMillis();
-        ChatResponse resp = chatService.ask(q.getQuestion(), "eval-" + mode + "-" + q.getId(), mode, "off", "workflow", null);
+        ChatResponse resp = chatService.ask(q.getQuestion(), runName, mode, "off", "workflow", viewer);
         double latencyMs = System.currentTimeMillis() - start;
 
         List<String> snippets = resp.getSources() == null ? List.of()

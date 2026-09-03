@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta, OpsStatus, ChunkPage, RebuildStatus, AuthUser, Permission, Role, ManagedUser, UserRequest, RoleRequest, RegisterRequest } from './types';
+import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta, OpsStatus, ChunkPage, RebuildStatus, AuthUser, Permission, Role, ManagedUser, UserRequest, RoleRequest, RegisterRequest, DemoEvent } from './types';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -344,6 +344,42 @@ export async function runEvaluation(
         if (!data) continue;
         try {
           onEvent(JSON.parse(data) as EvaluationEvent);
+        } catch {
+          // ignore malformed chunk
+        }
+      }
+    }
+  }
+}
+
+export async function initDemo(onEvent: (evt: DemoEvent) => void): Promise<void> {
+  const resp = await fetch('/api/demo/init', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+
+  if (!resp.ok || !resp.body) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(text || `HTTP ${resp.status}`);
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf('\n\n')) >= 0) {
+      const rawEvent = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      for (const line of rawEvent.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (!data) continue;
+        try {
+          onEvent(JSON.parse(data) as DemoEvent);
         } catch {
           // ignore malformed chunk
         }
