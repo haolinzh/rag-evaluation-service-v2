@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Table, Button, Typography, Tag, Space, message, Popconfirm } from 'antd';
-import { ReloadOutlined, DeleteOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { ReloadOutlined, DeleteOutlined, FolderOpenOutlined, FileSearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { fetchLogs, clearLogs } from '../api';
 import type { RequestLog } from '../types';
@@ -109,7 +109,7 @@ const LogPanel: React.FC<Props> = ({ onOpenManagement, canClear }) => {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <Typography.Title level={5} style={{ margin: 0 }}>日志</Typography.Title>
+        <Typography.Title level={5} style={{ margin: 0 }}><FileSearchOutlined style={{ color: '#722ed1' }} /> 日志</Typography.Title>
         <Space size={4}>
           <Button type="text" size="small" icon={<ReloadOutlined />} onClick={() => refresh()} loading={loading}>刷新</Button>
           <Button type="text" size="small" icon={<FolderOpenOutlined />} onClick={onOpenManagement}>详情</Button>

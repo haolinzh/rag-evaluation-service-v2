@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Table, Button, Typography, Tag, Space, Descriptions, message, Popconfirm, Steps } from 'antd';
-import { ArrowLeftOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ReloadOutlined, DeleteOutlined, FileSearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { fetchLogs, clearLogs } from '../api';
 import type { RequestLog } from '../types';
@@ -294,7 +294,7 @@ const LogManagement: React.FC<Props> = ({ onBack, canClear }) => {
     <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
-        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>日志管理</Typography.Title>
+        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}><FileSearchOutlined style={{ color: '#722ed1' }} /> 日志管理</Typography.Title>
         <Button icon={<ReloadOutlined />} onClick={refresh} loading={loading}>刷新</Button>
         {canClear && (
           <Popconfirm title="确定清空所有日志？" onConfirm={handleClear} okText="清空" cancelText="取消">

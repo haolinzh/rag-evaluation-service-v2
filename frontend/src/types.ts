@@ -9,7 +9,7 @@ export interface DocumentMeta {
   chunkSize?: number;
   overlap?: number;
   delimiter?: string;
-  status?: 'PENDING' | 'READY' | 'FAILED';
+  status?: 'QUEUED' | 'PROCESSING' | 'READY' | 'FAILED';
   errorMessage?: string;
   embeddingModel?: string;
   embeddingDimension?: number;
@@ -338,6 +338,44 @@ export interface PgStatus {
 export interface OpsStatus {
   es: EsStatus;
   pg: PgStatus;
+}
+
+export interface WorkerPool {
+  coreSize: number;
+  maxSize: number;
+  poolSize: number;
+  activeThreads: number;
+  queueCapacity: number;
+  queueSize: number;
+  completedTasks: number;
+  embedPermits: number;
+  embedAvailable: number;
+}
+
+export interface Jvm {
+  heapUsed: number;
+  heapMax: number;
+  nonHeapUsed: number;
+  threadCount: number;
+  loadedClassCount: number;
+  gcCount: number;
+  gcTimeMs: number;
+  uptimeMs: number;
+  systemLoadAvg: number;
+  availableProcessors: number;
+}
+
+export interface IngestQueue {
+  queued: number;
+  processing: number;
+  ready: number;
+  failed: number;
+}
+
+export interface SystemStatus {
+  workerPool: WorkerPool;
+  jvm: Jvm;
+  ingestQueue: IngestQueue;
 }
 
 export interface ChunkRecord {

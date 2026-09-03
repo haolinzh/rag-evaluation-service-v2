@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Upload, Button, List, Popconfirm, Select, Space, Typography, message, Tag, Progress, Input, InputNumber, Tooltip, Modal, Segmented } from 'antd';
-import { DeleteOutlined, ReloadOutlined, InboxOutlined, FolderOpenOutlined, DownloadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, ReloadOutlined, InboxOutlined, FolderOpenOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
 import type { DocumentMeta } from '../types';
 import { uploadDocument, deleteDocument, downloadDocument } from '../api';
 
@@ -108,7 +108,7 @@ const DocumentPanel: React.FC<Props> = ({ documents, onRefresh, onOpenManagement
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-      <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 12 }}>文档</Typography.Title>
+      <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 12 }}><FileTextOutlined style={{ color: '#1677ff' }} /> 文档</Typography.Title>
 
       <div style={{ marginBottom: 10 }}>
         <div style={labelStyle}>切分方式</div>
@@ -200,7 +200,7 @@ const DocumentPanel: React.FC<Props> = ({ documents, onRefresh, onOpenManagement
                     </Tag>
                   )}
                   <Tag style={{ marginInlineEnd: 0 }}>{formatSize(doc.fileSize)}</Tag>
-                  {doc.status === 'PENDING' ? (
+                  {doc.status === 'QUEUED' || doc.status === 'PROCESSING' ? (
                     <Tag color="processing" style={{ marginInlineEnd: 0 }}>处理中</Tag>
                   ) : doc.status === 'FAILED' ? (
                     <Tooltip title={doc.errorMessage || '处理失败'}>

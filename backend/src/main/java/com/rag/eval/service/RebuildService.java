@@ -7,6 +7,7 @@ import com.rag.eval.repository.VectorChunkRepo;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -16,9 +17,9 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service
 public class RebuildService {
 
-    private static final String STATUS_PENDING = "PENDING";
-    private static final String STATUS_READY = "READY";
-    private static final String STATUS_FAILED = "FAILED";
+    private static final String STATUS_QUEUED = DocumentService.STATUS_QUEUED;
+    private static final String STATUS_READY = DocumentService.STATUS_READY;
+    private static final String STATUS_FAILED = DocumentService.STATUS_FAILED;
 
     private final DocumentMetaRepo docRepo;
     private final FileStorageService fileStorage;
@@ -28,6 +29,7 @@ public class RebuildService {
     private final ElasticsearchService esService;
     private final SemanticCacheService cacheService;
     private final ConfigService config;
+    private final IngestScheduler ingestScheduler;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicReference<RebuildStatus> status = new AtomicReference<>(
@@ -36,7 +38,8 @@ public class RebuildService {
     public RebuildService(DocumentMetaRepo docRepo, FileStorageService fileStorage,
                           DocumentParserService parser, IndexBuilder indexBuilder,
                           VectorChunkRepo vectorChunkRepo, ElasticsearchService esService,
-                          SemanticCacheService cacheService, ConfigService config) {
+                          SemanticCacheService cacheService, ConfigService config,
+                          IngestScheduler ingestScheduler) {
         this.docRepo = docRepo;
         this.fileStorage = fileStorage;
         this.parser = parser;
@@ -45,6 +48,7 @@ public class RebuildService {
         this.esService = esService;
         this.cacheService = cacheService;
         this.config = config;
+        this.ingestScheduler = ingestScheduler;
     }
 
     public record RebuildResult(int documentCount, int chunkCount) {}
@@ -61,12 +65,18 @@ public class RebuildService {
             throw new IllegalStateException("重建已在进行中，请稍候");
         }
         List<DocumentMeta> docs = docRepo.findAll();
+        LocalDateTime now = LocalDateTime.now();
         for (DocumentMeta meta : docs) {
-            meta.setStatus(STATUS_PENDING);
+            meta.setStatus(STATUS_QUEUED);
             meta.setErrorMessage(null);
+            meta.setAttemptCount(0);
+            meta.setNextRetryAt(now);
+            meta.setClaimedAt(null);
+            meta.setChunkCount(null);
             docRepo.save(meta);
         }
         status.set(new RebuildStatus(true, 0, docs.size(), 0, "PREPARING", null));
+        ingestScheduler.pause();
         executor.execute(this::runRebuild);
         return status.get();
     }
@@ -151,6 +161,8 @@ public class RebuildService {
                 markAll(STATUS_READY, null);
             }
             status.set(new RebuildStatus(false, 0, 0, 0, "FAILED", e.getMessage()));
+        } finally {
+            ingestScheduler.resume();
         }
     }
 

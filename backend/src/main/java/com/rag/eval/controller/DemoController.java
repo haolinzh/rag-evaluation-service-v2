@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rag.eval.model.AuthenticatedUser;
 import com.rag.eval.service.AuthService;
 import com.rag.eval.service.DemoInitService;
+import org.slf4j.MDC;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,10 +36,13 @@ public class DemoController {
     public SseEmitter init() {
         SseEmitter emitter = new SseEmitter(0L);
         AuthenticatedUser viewer = authService.currentUser();
+        String traceId = MDC.get("traceId");
         executor.execute(() -> {
+            if (traceId != null) MDC.put("traceId", traceId);
             try {
                 demoInitService.init(event -> send(emitter, event), viewer);
             } finally {
+                MDC.remove("traceId");
                 emitter.complete();
             }
         });

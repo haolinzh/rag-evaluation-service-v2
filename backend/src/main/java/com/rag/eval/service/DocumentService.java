@@ -16,19 +16,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.ByteArrayInputStream;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 @Service
 public class DocumentService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
 
-    public static final String STATUS_PENDING = "PENDING";
+    public static final String STATUS_QUEUED = "QUEUED";
+    public static final String STATUS_PROCESSING = "PROCESSING";
     public static final String STATUS_READY = "READY";
     public static final String STATUS_FAILED = "FAILED";
 
@@ -38,8 +37,6 @@ public class DocumentService {
     private static final int EMBEDDING_DIMENSION = 1024;
     private static final Set<String> VISIBILITIES = Set.of("PUBLIC", "DEPARTMENT", "EXECUTIVE", "PRIVATE");
 
-    private final DocumentParserService parser;
-    private final IndexBuilder indexBuilder;
     private final DocumentMetaRepo docRepo;
     private final VectorChunkRepo vectorChunkRepo;
     private final ElasticsearchService esService;
@@ -48,16 +45,11 @@ public class DocumentService {
     private final ConfigService configService;
     private final AuthorizationService authorizationService;
     private final NotificationService notificationService;
-    // 串行处理入库任务：避免并发 embedding 限流与双写冲突，大文件按序排队。
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-    public DocumentService(DocumentParserService parser, IndexBuilder indexBuilder,
-                           DocumentMetaRepo docRepo, VectorChunkRepo vectorChunkRepo,
+    public DocumentService(DocumentMetaRepo docRepo, VectorChunkRepo vectorChunkRepo,
                            ElasticsearchService esService, SemanticCacheService cacheService,
                            FileStorageService fileStorage, ConfigService configService,
                            AuthorizationService authorizationService, NotificationService notificationService) {
-        this.parser = parser;
-        this.indexBuilder = indexBuilder;
         this.docRepo = docRepo;
         this.vectorChunkRepo = vectorChunkRepo;
         this.esService = esService;
@@ -114,68 +106,20 @@ public class DocumentService {
         meta.setOwnerName(owner != null ? owner.displayName() : null);
         meta.setOwnerDepartment(owner != null ? owner.department() : null);
         meta.setVisibility(normalizeVisibility(visibility));
-        meta.setStatus(STATUS_PENDING);
+        meta.setStatus(STATUS_QUEUED);
         meta.setErrorMessage(null);
+        meta.setAttemptCount(0);
+        meta.setNextRetryAt(LocalDateTime.now());
         meta = docRepo.save(meta);
-
-        final DocumentMeta saved = meta;
-        executor.execute(() -> processAsync(saved));
-        return saved;
-    }
-
-    private void processAsync(DocumentMeta meta) {
-        try {
-            byte[] bytes = fileStorage.load(meta.getStoredFileName());
-            if (bytes == null) {
-                throw new IllegalStateException("原始文件缺失: " + meta.getFileName());
-            }
-            DocumentParserService.ParsedDocument parsed =
-                parser.parse(new ByteArrayInputStream(bytes), meta.getFileName());
-            ChunkConfig chunkConfig = chunkConfigOf(meta);
-            List<ChunkData> chunks = parser.splitAndEnrich(parsed.text(), meta.getFileName(), parsed.sourceType(), chunkConfig);
-            for (int i = 0; i < chunks.size(); i++) {
-                chunks.get(i).setChunkIndex(i);
-            }
-
-            // Ensure ES index has a dense_vector mapping before dual-writing embeddings.
-            esService.ensureVectorIndex();
-            // 重处理前清掉旧 chunk/向量，避免反复重切时残留脏数据。
-            clearIndexedData(meta);
-            indexBuilder.buildIndex(chunks);
-
-            meta.setStatus(STATUS_READY);
-            meta.setChunkCount(chunks.size());
-            meta.setErrorMessage(null);
-            docRepo.save(meta);
-            notificationService.notify("document", "文档处理完成", "「" + meta.getFileName() + "」分块完成（" + chunks.size() + " chunk）", meta.getOwnerId(), meta.getOwnerName(), null);
-        } catch (Exception e) {
-            // 清理可能的部分写入，避免脏数据进入检索；文件保留，删除文档时统一清。
-            log.warn("Document ingest failed: id={}, file={}", meta.getId(), meta.getFileName(), e);
-            clearIndexedData(meta);
-            meta.setStatus(STATUS_FAILED);
-            meta.setErrorMessage(e.getMessage());
-            docRepo.save(meta);
-            notificationService.notify("document", "文档处理失败", "「" + meta.getFileName() + "」" + (e.getMessage() == null ? "处理失败" : e.getMessage()), meta.getOwnerId(), meta.getOwnerName(), null);
-        }
+        return meta;
     }
 
     @EventListener(ApplicationReadyEvent.class)
-    public void recoverPendingDocuments() {
-        List<DocumentMeta> pending = docRepo.findAll().stream()
-            .filter(d -> STATUS_PENDING.equals(d.getStatus()))
-            .toList();
-        for (DocumentMeta meta : pending) {
-            log.info("Recovering pending document: id={}, file={}", meta.getId(), meta.getFileName());
-            executor.execute(() -> processAsync(meta));
+    public void recoverOrphanedProcessing() {
+        int n = docRepo.resetAllProcessing(LocalDateTime.now());
+        if (n > 0) {
+            log.info("Recovered {} orphaned PROCESSING document(s) on startup", n);
         }
-    }
-
-    private ChunkConfig chunkConfigOf(DocumentMeta meta) {
-        String splitMode = meta.getSplitMode() != null ? meta.getSplitMode() : ChunkConfig.MODE_SIZE;
-        int chunkSize = meta.getChunkSize() != null ? meta.getChunkSize() : ChunkConfig.DEFAULT_CHUNK_SIZE;
-        int overlap = meta.getOverlap() != null ? meta.getOverlap() : ChunkConfig.DEFAULT_OVERLAP;
-        String delimiter = meta.getDelimiter() != null ? meta.getDelimiter() : "";
-        return new ChunkConfig(splitMode, chunkSize, delimiter, overlap);
     }
 
     public List<DocumentMeta> listAll(AuthenticatedUser viewer) {
@@ -210,8 +154,11 @@ public class DocumentService {
 
     public DocumentMeta reprocess(Long id, ChunkConfig config, AuthenticatedUser viewer, String visibility) {
         DocumentMeta meta = requireManage(id, viewer);
-        // 清掉旧 chunk 与向量（原文件保留，直接复用重切），改配置后重新入列处理。
-        clearIndexedData(meta);
+        // 仅 READY/FAILED 可重入队；处理中（QUEUED/PROCESSING）返回冲突，避免并发覆盖。
+        // 旧 chunk 与向量的清理交由 worker 在建索引前统一处理，保证单一写路径。
+        if (docRepo.requeue(id, LocalDateTime.now()) == 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "文档正在处理中，无法重新切分");
+        }
         if (visibility != null && !visibility.isBlank()) {
             meta.setVisibility(normalizeVisibility(visibility));
         }
@@ -222,12 +169,11 @@ public class DocumentService {
         meta.setEmbeddingModel(configService.get(EMBEDDING_MODEL_KEY, DEFAULT_EMBEDDING_MODEL));
         meta.setEmbeddingDimension(EMBEDDING_DIMENSION);
         meta.setChunkCount(null);
-        meta.setStatus(STATUS_PENDING);
+        meta.setStatus(STATUS_QUEUED);
         meta.setErrorMessage(null);
-        meta = docRepo.save(meta);
-        final DocumentMeta saved = meta;
-        executor.execute(() -> processAsync(saved));
-        return saved;
+        meta.setAttemptCount(0);
+        meta.setNextRetryAt(LocalDateTime.now());
+        return docRepo.save(meta);
     }
 
     private DocumentMeta requireView(Long id, AuthenticatedUser viewer) {

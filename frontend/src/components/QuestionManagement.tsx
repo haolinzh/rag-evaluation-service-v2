@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Typography, Space, Popconfirm, message } from 'antd';
-import { ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, OrderedListOutlined } from '@ant-design/icons';
 import type { EvaluationQuestion, EvaluationQuestionInput } from '../types';
 import { fetchEvaluationQuestions, createEvaluationQuestion, updateEvaluationQuestion, deleteEvaluationQuestion } from '../api';
 
@@ -125,7 +125,7 @@ const QuestionManagement: React.FC<Props> = ({ onBack }) => {
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
-        <Typography.Title level={4} style={{ margin: 0 }}>测试集管理</Typography.Title>
+        <Typography.Title level={4} style={{ margin: 0 }}><OrderedListOutlined style={{ color: '#722ed1' }} /> 测试集管理</Typography.Title>
         <Tag>{questions.length} 题</Tag>
         <span style={{ flex: 1 }} />
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增题目</Button>

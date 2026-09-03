@@ -117,7 +117,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!documents.some(d => d.status === 'PENDING')) return;
+    if (!documents.some(d => d.status === 'QUEUED' || d.status === 'PROCESSING')) return;
     const timer = setInterval(refreshDocuments, 2500);
     return () => clearInterval(timer);
   }, [documents]);

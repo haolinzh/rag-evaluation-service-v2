@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Tag, Typography, Space, message, Modal, Input, Select, Switch, Popconfirm, Tabs } from 'antd';
-import { ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined } from '@ant-design/icons';
 import type { ManagedUser, Role, UserRequest } from '../types';
 import { listUsers, listRoles, createUser, updateUser, deleteUser } from '../api';
 import RoleManagement from './RoleManagement';
@@ -206,7 +206,7 @@ const UserManagement: React.FC<Props> = ({ onBack }) => {
     <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
-        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>用户管理</Typography.Title>
+        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}><TeamOutlined style={{ color: '#1677ff' }} /> 用户管理</Typography.Title>
       </div>
 
       <Tabs

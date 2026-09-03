@@ -86,7 +86,27 @@
 
 ## 版本演进
 
-> `v2.0.1`（2026-09-03）→ **`v2.0.2`**（当前版本，2026-09-03）
+> `v2.0.2`（2026-09-03）→ **`v2.0.3`**（当前版本，2026-09-03）
+
+### v2.0.3 增量（2026-09-03）
+
+**1. 工程底座升级（集成测试）**
+- 引入 Testcontainers：用真实 PostgreSQL（pgvector）/ Elasticsearch / Redis 容器跑集成测试
+- 覆盖三个最易错点：消息可见性（admin 全量 / 普通用户局部）、OR 查询语义、RBAC seed 幂等
+
+**2. 文档入库治理（多 worker 并发 + 重试）**
+- 入库任务持久化到 `document_meta`（新增 attempt_count / next_retry_at / claimed_at），进程重启不丢任务
+- 原子抢占（条件 UPDATE）+ 多 worker 并发（`doc-ingest-*` 线程池），失败按可重试性退避重试，达上限转 FAILED
+- worker 数 / 队列容量 / embedding 并发均可配置（`document.ingest.*` / `dashscope.embedding-max-concurrency`）
+- 处理中删除不复活、不残留孤儿 chunk；启动复位残留 PROCESSING
+
+**3. 可观测性（Micrometer + traceId）**
+- 引入 Actuator + Micrometer + Prometheus（`/actuator/prometheus`），关闭默认 ES 健康指示器（改用自有 `/api/ops/status`）
+- 新增 `TraceIdFilter`：`X-Request-Id` 贯穿日志、请求记录与响应头
+- 运维页新增「系统指标」卡片：worker 线程池 / JVM 运行时 / 文档入库队列实时监控
+
+**4. UI 打磨**
+- 全页面标题与卡片标题统一彩色 Ant Design 图标（首页三面板 + 运维页 + 关于页 + 各管理页）
 
 ### v2.0.2 增量（2026-09-03）
 

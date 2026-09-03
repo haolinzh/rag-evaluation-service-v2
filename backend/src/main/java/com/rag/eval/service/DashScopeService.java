@@ -15,12 +15,14 @@ import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
 
 @Service
@@ -34,6 +36,7 @@ public class DashScopeService {
     private final DashScopeEmbeddingModel baseEmbeddingModel;
     private final RestClient.Builder restClientBuilder;
     private final WebClient.Builder webClientBuilder;
+    private final Semaphore embedSemaphore;
 
     private volatile String cachedApiKey;
     private volatile DashScopeChatModel chatModel;
@@ -43,12 +46,14 @@ public class DashScopeService {
                             DashScopeChatModel baseChatModel,
                             DashScopeEmbeddingModel baseEmbeddingModel,
                             RestClient.Builder restClientBuilder,
-                            WebClient.Builder webClientBuilder) {
+                            WebClient.Builder webClientBuilder,
+                            @Qualifier("dashscopeEmbedSemaphore") Semaphore embedSemaphore) {
         this.config = config;
         this.baseChatModel = baseChatModel;
         this.baseEmbeddingModel = baseEmbeddingModel;
         this.restClientBuilder = restClientBuilder;
         this.webClientBuilder = webClientBuilder;
+        this.embedSemaphore = embedSemaphore;
         this.chatModel = baseChatModel;
         this.embeddingModel = baseEmbeddingModel;
     }
@@ -165,6 +170,7 @@ public class DashScopeService {
     }
 
     public List<Double> embed(String text) {
+        acquireEmbedSlot();
         try {
             refreshModels(config.resolveDashScopeApiKey());
             EmbeddingResponse response = embeddingModel.call(
@@ -174,10 +180,13 @@ public class DashScopeService {
             return toDoubles(embeddings.get(0).getOutput());
         } catch (Exception e) {
             throw new RuntimeException("DashScope embedding failed: " + e.getMessage(), e);
+        } finally {
+            embedSemaphore.release();
         }
     }
 
     public List<List<Double>> embedBatch(List<String> texts) {
+        acquireEmbedSlot();
         try {
             refreshModels(config.resolveDashScopeApiKey());
             List<List<Double>> all = new ArrayList<>();
@@ -197,6 +206,17 @@ public class DashScopeService {
             return all;
         } catch (Exception e) {
             throw new RuntimeException("DashScope embedding failed: " + e.getMessage(), e);
+        } finally {
+            embedSemaphore.release();
+        }
+    }
+
+    private void acquireEmbedSlot() {
+        try {
+            embedSemaphore.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("DashScope embedding interrupted", e);
         }
     }
 

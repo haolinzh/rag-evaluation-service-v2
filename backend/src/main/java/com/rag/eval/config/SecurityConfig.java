@@ -1,6 +1,7 @@
 package com.rag.eval.config;
 
 import com.rag.eval.service.TokenAuthFilter;
+import com.rag.eval.service.TraceIdFilter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,9 +22,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final TokenAuthFilter tokenAuthFilter;
+    private final TraceIdFilter traceIdFilter;
 
-    public SecurityConfig(TokenAuthFilter tokenAuthFilter) {
+    public SecurityConfig(TokenAuthFilter tokenAuthFilter, TraceIdFilter traceIdFilter) {
         this.tokenAuthFilter = tokenAuthFilter;
+        this.traceIdFilter = traceIdFilter;
     }
 
     @Bean
@@ -34,6 +37,13 @@ public class SecurityConfig {
     @Bean
     public FilterRegistrationBean<TokenAuthFilter> tokenAuthFilterRegistration(TokenAuthFilter filter) {
         FilterRegistrationBean<TokenAuthFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean<TraceIdFilter> traceIdFilterRegistration(TraceIdFilter filter) {
+        FilterRegistrationBean<TraceIdFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }
@@ -68,7 +78,8 @@ public class SecurityConfig {
                     response.getWriter().write("{\"error\":\"无权限访问\"}");
                 })
             )
-            .addFilterBefore(tokenAuthFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(tokenAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(traceIdFilter, TokenAuthFilter.class);
 
         return http.build();
     }

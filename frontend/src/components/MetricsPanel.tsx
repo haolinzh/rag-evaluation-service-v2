@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Button, Typography, Space, message } from 'antd';
-import { DownloadOutlined, ReloadOutlined, ClearOutlined } from '@ant-design/icons';
+import { DownloadOutlined, ReloadOutlined, ClearOutlined, BarChartOutlined } from '@ant-design/icons';
 import { fetchReport, fetchMetricsSummary, clearCache } from '../api';
 import type { OpsReport } from '../types';
 
@@ -74,7 +74,7 @@ const MetricsPanel: React.FC<Props> = ({ canClearCache }) => {
   return (
     <Card size="small">
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-        <Typography.Title level={5} style={{ margin: 0, flex: 1 }}>运维指标</Typography.Title>
+        <Typography.Title level={5} style={{ margin: 0, flex: 1 }}><BarChartOutlined style={{ color: '#fa8c16' }} /> 运维指标</Typography.Title>
         <Space size={4}>
           <Button size="small" type="text" icon={<ReloadOutlined />} onClick={refresh}>刷新</Button>
           <Button size="small" type="text" icon={<DownloadOutlined />} onClick={handleDownload}>下载 CSV</Button>

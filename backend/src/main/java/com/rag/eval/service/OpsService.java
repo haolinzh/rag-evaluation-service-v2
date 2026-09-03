@@ -13,14 +13,25 @@ import com.rag.eval.model.ChunkRecord;
 import com.rag.eval.model.EsStatus;
 import com.rag.eval.model.OpsStatus;
 import com.rag.eval.model.PgStatus;
+import com.rag.eval.model.SystemStatus;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
+import java.lang.management.ClassLoadingMXBean;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryUsage;
+import java.lang.management.OperatingSystemMXBean;
+import java.lang.management.RuntimeMXBean;
+import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Semaphore;
 
 @Service
 public class OpsService {
@@ -28,17 +39,89 @@ public class OpsService {
     private final ElasticsearchClient esClient;
     private final JdbcTemplate jdbc;
     private final String esIndexName;
+    private final ThreadPoolTaskExecutor documentWorkerExecutor;
+    private final Semaphore embedSemaphore;
+    private final int embedMaxConcurrency;
 
     public OpsService(ElasticsearchClient esClient,
                       @Qualifier("pgVectorJdbcTemplate") JdbcTemplate jdbc,
-                      @Value("${elasticsearch.index-name}") String esIndexName) {
+                      @Value("${elasticsearch.index-name}") String esIndexName,
+                      @Qualifier("documentWorkerExecutor") ThreadPoolTaskExecutor documentWorkerExecutor,
+                      @Qualifier("dashscopeEmbedSemaphore") Semaphore embedSemaphore,
+                      @Value("${dashscope.embedding-max-concurrency:2}") int embedMaxConcurrency) {
         this.esClient = esClient;
         this.jdbc = jdbc;
         this.esIndexName = esIndexName;
+        this.documentWorkerExecutor = documentWorkerExecutor;
+        this.embedSemaphore = embedSemaphore;
+        this.embedMaxConcurrency = embedMaxConcurrency;
     }
 
     public OpsStatus status() {
         return new OpsStatus(esStatus(), pgStatus());
+    }
+
+    public SystemStatus systemStatus() {
+        return new SystemStatus(workerPool(), jvm(), ingestQueue());
+    }
+
+    private SystemStatus.WorkerPool workerPool() {
+        var tp = documentWorkerExecutor.getThreadPoolExecutor();
+        return new SystemStatus.WorkerPool(
+            documentWorkerExecutor.getCorePoolSize(),
+            documentWorkerExecutor.getMaxPoolSize(),
+            documentWorkerExecutor.getPoolSize(),
+            documentWorkerExecutor.getActiveCount(),
+            tp.getQueue().size() + tp.getQueue().remainingCapacity(),
+            tp.getQueue().size(),
+            tp.getCompletedTaskCount(),
+            embedMaxConcurrency,
+            embedSemaphore.availablePermits()
+        );
+    }
+
+    private SystemStatus.Jvm jvm() {
+        MemoryMXBean memory = ManagementFactory.getMemoryMXBean();
+        MemoryUsage heap = memory.getHeapMemoryUsage();
+        MemoryUsage nonHeap = memory.getNonHeapMemoryUsage();
+        ThreadMXBean threads = ManagementFactory.getThreadMXBean();
+        ClassLoadingMXBean classes = ManagementFactory.getClassLoadingMXBean();
+        RuntimeMXBean runtime = ManagementFactory.getRuntimeMXBean();
+        OperatingSystemMXBean os = ManagementFactory.getOperatingSystemMXBean();
+        long gcCount = 0;
+        long gcTimeMs = 0;
+        for (GarbageCollectorMXBean gc : ManagementFactory.getGarbageCollectorMXBeans()) {
+            gcCount += gc.getCollectionCount();
+            gcTimeMs += gc.getCollectionTime();
+        }
+        return new SystemStatus.Jvm(
+            heap.getUsed(),
+            heap.getMax(),
+            nonHeap.getUsed(),
+            threads.getThreadCount(),
+            classes.getLoadedClassCount(),
+            gcCount,
+            gcTimeMs,
+            runtime.getUptime(),
+            os.getSystemLoadAverage(),
+            os.getAvailableProcessors()
+        );
+    }
+
+    private SystemStatus.IngestQueue ingestQueue() {
+        long queued = 0, processing = 0, ready = 0, failed = 0;
+        for (Map<String, Object> row : jdbc.queryForList(
+            "SELECT status, count(*) AS c FROM document_meta GROUP BY status")) {
+            long c = ((Number) row.get("c")).longValue();
+            switch (String.valueOf(row.get("status"))) {
+                case "QUEUED" -> queued = c;
+                case "PROCESSING" -> processing = c;
+                case "READY" -> ready = c;
+                case "FAILED" -> failed = c;
+                default -> { }
+            }
+        }
+        return new SystemStatus.IngestQueue(queued, processing, ready, failed);
     }
 
     private EsStatus esStatus() {

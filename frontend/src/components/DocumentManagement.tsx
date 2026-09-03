@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Drawer, Tag, Typography, Space, Empty, message, Tooltip, Modal, Select, InputNumber, Input } from 'antd';
-import { ArrowLeftOutlined, EyeOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, EyeOutlined, DownloadOutlined, EditOutlined, FileTextOutlined } from '@ant-design/icons';
 import type { DocumentMeta, ChunkPreview, ChunkConfig } from '../types';
 import { listDocuments, getDocumentChunks, downloadDocument, reprocessDocument } from '../api';
 
@@ -19,6 +19,8 @@ const formatSize = (bytes?: number) => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
+
+const isPending = (s?: string) => s === 'QUEUED' || s === 'PROCESSING';
 
 const DocumentManagement: React.FC<Props> = ({ onBack }) => {
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
@@ -55,7 +57,7 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
   useEffect(() => { refresh(); }, []);
 
   useEffect(() => {
-    if (!documents.some(d => d.status === 'PENDING')) return;
+    if (!documents.some(d => isPending(d.status))) return;
     const timer = setInterval(refresh, 2500);
     return () => clearInterval(timer);
   }, [documents]);
@@ -105,7 +107,7 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
     { title: '文件名', dataIndex: 'fileName', key: 'fileName', ellipsis: true, width: 200, sorter: (a: DocumentMeta, b: DocumentMeta) => a.fileName.localeCompare(b.fileName) },
     {
       title: '状态', key: 'status', width: 100,
-      render: (_: unknown, r: DocumentMeta) => r.status === 'PENDING'
+      render: (_: unknown, r: DocumentMeta) => isPending(r.status)
         ? <Tag color="processing">处理中</Tag>
         : r.status === 'FAILED'
           ? <Tooltip title={r.errorMessage || '处理失败'}><Tag color="error">失败</Tag></Tooltip>
@@ -143,7 +145,7 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
       render: (_: unknown, r: DocumentMeta) => (
         <Space size={4}>
           <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>预览</Button>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>重切分</Button>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} disabled={isPending(r.status)}>重切分</Button>
           <Button size="small" icon={<DownloadOutlined />} onClick={() => { downloadDocument(r.id).catch(() => message.error('下载失败')); }}>下载</Button>
         </Space>
       ),
@@ -154,7 +156,7 @@ const DocumentManagement: React.FC<Props> = ({ onBack }) => {
     <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
-        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>文档管理</Typography.Title>
+        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}><FileTextOutlined style={{ color: '#1677ff' }} /> 文档管理</Typography.Title>
       </div>
 
       <Table

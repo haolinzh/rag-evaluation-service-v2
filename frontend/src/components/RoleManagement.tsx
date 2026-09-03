@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Tag, Typography, Space, message, Modal, Input, Checkbox, Popconfirm } from 'antd';
-import { ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import type { Role, Permission, RoleRequest } from '../types';
 import { listRoles, fetchPermissions, createRole, updateRole, deleteRole } from '../api';
 
@@ -124,7 +124,7 @@ const RoleManagement: React.FC<Props> = ({ onBack, embedded = false }) => {
     <div style={embedded ? undefined : { height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         {!embedded && <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>}
-        {!embedded && <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>角色管理</Typography.Title>}
+        {!embedded && <Typography.Title level={4} style={{ margin: 0, flex: 1 }}><SafetyCertificateOutlined style={{ color: '#722ed1' }} /> 角色管理</Typography.Title>}
         {embedded && <div style={{ flex: 1 }} />}
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建角色</Button>
       </div>
