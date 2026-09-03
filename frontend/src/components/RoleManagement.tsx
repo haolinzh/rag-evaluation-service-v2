@@ -6,9 +6,10 @@ import { listRoles, fetchPermissions, createRole, updateRole, deleteRole } from 
 
 interface Props {
   onBack: () => void;
+  embedded?: boolean;
 }
 
-const RoleManagement: React.FC<Props> = ({ onBack }) => {
+const RoleManagement: React.FC<Props> = ({ onBack, embedded = false }) => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,10 +121,11 @@ const RoleManagement: React.FC<Props> = ({ onBack }) => {
   ];
 
   return (
-    <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
+    <div style={embedded ? undefined : { height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
-        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>角色管理</Typography.Title>
+        {!embedded && <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>}
+        {!embedded && <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>角色管理</Typography.Title>}
+        {embedded && <div style={{ flex: 1 }} />}
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建角色</Button>
       </div>
 

@@ -5,6 +5,7 @@ import com.rag.eval.model.ChunkPreview;
 import com.rag.eval.model.DocumentMeta;
 import com.rag.eval.service.AuthService;
 import com.rag.eval.service.DocumentService;
+import com.rag.eval.service.NotificationService;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -22,10 +23,13 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final AuthService authService;
+    private final NotificationService notificationService;
 
-    public DocumentController(DocumentService documentService, AuthService authService) {
+    public DocumentController(DocumentService documentService, AuthService authService,
+                              NotificationService notificationService) {
         this.documentService = documentService;
         this.authService = authService;
+        this.notificationService = notificationService;
     }
 
     @PostMapping("/upload")
@@ -72,6 +76,7 @@ public class DocumentController {
     public ResponseEntity<byte[]> download(@PathVariable Long id) {
         return documentService.getOriginal(id, authService.currentUserOrGuest())
             .map(f -> {
+                notificationService.notify("document", "文档下载", "下载文档「" + f.fileName() + "」", authService.currentUserOrGuest(), null);
                 ContentDisposition disposition = ContentDisposition.attachment()
                     .filename(f.fileName(), StandardCharsets.UTF_8)
                     .build();

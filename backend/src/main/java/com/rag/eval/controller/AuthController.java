@@ -15,6 +15,7 @@ import com.rag.eval.repository.PermissionRepo;
 import com.rag.eval.repository.RoleRepo;
 import com.rag.eval.repository.UserRepo;
 import com.rag.eval.service.AuthService;
+import com.rag.eval.service.NotificationService;
 import com.rag.eval.service.TokenStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -40,15 +41,18 @@ public class AuthController {
     private final RoleRepo roleRepo;
     private final PermissionRepo permissionRepo;
     private final PasswordEncoder passwordEncoder;
+    private final NotificationService notificationService;
 
     public AuthController(AuthService authService, TokenStore tokenStore, UserRepo userRepo,
-                          RoleRepo roleRepo, PermissionRepo permissionRepo, PasswordEncoder passwordEncoder) {
+                          RoleRepo roleRepo, PermissionRepo permissionRepo, PasswordEncoder passwordEncoder,
+                          NotificationService notificationService) {
         this.authService = authService;
         this.tokenStore = tokenStore;
         this.userRepo = userRepo;
         this.roleRepo = roleRepo;
         this.permissionRepo = permissionRepo;
         this.passwordEncoder = passwordEncoder;
+        this.notificationService = notificationService;
     }
 
     @PostMapping("/login")
@@ -151,6 +155,7 @@ public class AuthController {
             user.setEnabled(req.enabled() == null || req.enabled());
             user.setRoles(resolveRoles(req.roleCodes()));
             userRepo.save(user);
+            notificationService.notify("user_manage", "用户创建", "管理员创建用户 " + user.getUsername(), authService.currentUser(), user.getUsername());
             return ResponseEntity.ok(toUserDto(user));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -180,6 +185,7 @@ public class AuthController {
             if (req.enabled() != null) user.setEnabled(req.enabled());
             if (req.roleCodes() != null) user.setRoles(resolveRoles(req.roleCodes()));
             userRepo.save(user);
+            notificationService.notify("user_manage", "用户更新", "管理员更新用户 " + user.getUsername(), authService.currentUser(), user.getUsername());
             return ResponseEntity.ok(toUserDto(user));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -193,10 +199,12 @@ public class AuthController {
         if (me != null && me.id().equals(id)) {
             return ResponseEntity.badRequest().body(Map.of("error", "不能删除当前登录用户"));
         }
+        String targetUsername = userRepo.findById(id).map(AppUser::getUsername).orElse(null);
         if (!userRepo.existsById(id)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "用户不存在"));
         }
         userRepo.deleteById(id);
+        notificationService.notify("user_manage", "用户删除", "管理员删除用户 " + targetUsername, me, targetUsername);
         return ResponseEntity.ok(Map.of("message", "已删除"));
     }
 
@@ -229,6 +237,7 @@ public class AuthController {
             role.setBuiltin(false);
             role.setPermissions(resolvePermissions(req.permissionCodes()));
             roleRepo.save(role);
+            notificationService.notify("role_manage", "角色创建", "管理员创建角色 " + role.getName(), authService.currentUser(), null);
             return ResponseEntity.ok(toRoleDto(role));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -256,6 +265,7 @@ public class AuthController {
             if (req.description() != null) role.setDescription(req.description());
             if (req.permissionCodes() != null) role.setPermissions(resolvePermissions(req.permissionCodes()));
             roleRepo.save(role);
+            notificationService.notify("role_manage", "角色更新", "管理员更新角色 " + role.getName(), authService.currentUser(), null);
             return ResponseEntity.ok(toRoleDto(role));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -273,6 +283,7 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "内置角色不可删除"));
         }
         roleRepo.delete(role);
+        notificationService.notify("role_manage", "角色删除", "管理员删除角色 " + role.getName(), authService.currentUser(), null);
         return ResponseEntity.ok(Map.of("message", "已删除"));
     }
 

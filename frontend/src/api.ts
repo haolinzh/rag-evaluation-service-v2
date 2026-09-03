@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta, OpsStatus, ChunkPage, RebuildStatus, AuthUser, Permission, Role, ManagedUser, UserRequest, RoleRequest, RegisterRequest, DemoEvent } from './types';
+import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta, OpsStatus, ChunkPage, RebuildStatus, AuthUser, Permission, Role, ManagedUser, UserRequest, RoleRequest, RegisterRequest, DemoEvent, AppNotification } from './types';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -458,4 +458,18 @@ export async function updateRole(id: number, input: RoleRequest): Promise<Role> 
 
 export async function deleteRole(id: number): Promise<void> {
   await api.delete(`/auth/roles/${id}`);
+}
+
+export async function fetchMessages(limit = 20): Promise<AppNotification[]> {
+  const { data } = await api.get('/messages', { params: { limit } });
+  return data;
+}
+
+export async function fetchUnreadCount(): Promise<number> {
+  const { data } = await api.get('/messages/unread-count');
+  return data.count;
+}
+
+export async function markMessagesRead(): Promise<void> {
+  await api.post('/messages/read');
 }

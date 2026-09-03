@@ -26,6 +26,17 @@ export interface AuthUser {
   permissions: string[];
 }
 
+export interface AppNotification {
+  id: number;
+  type: string;
+  title: string;
+  content: string;
+  actorName?: string | null;
+  targetUsername?: string | null;
+  read: boolean;
+  createdAt: string;
+}
+
 export interface Permission {
   code: string;
   name: string;

@@ -35,6 +35,7 @@ public class DataInitializer {
             }
             ensureGuestRole(roleRepo, permissionRepo);
             ensureWebSearchPermission(roleRepo, permissionRepo);
+            ensureMessagePermission(roleRepo, permissionRepo);
             if (userRepo.count() == 0) {
                 seedAdmin(userRepo, roleRepo, passwordEncoder);
             }
@@ -95,7 +96,8 @@ public class DataInitializer {
             p("log:view", "查看请求日志", "系统"),
             p("log:clear", "清空请求日志", "系统"),
             p("cache:clear", "清空语义缓存", "系统"),
-            p("report:view", "查看指标汇总/CSV", "系统")
+            p("report:view", "查看指标汇总/CSV", "系统"),
+            p("message:view", "查看消息中心", "系统")
         );
     }
 
@@ -108,16 +110,16 @@ public class DataInitializer {
             "document:read:public", "document:read:department", "document:read:executive",
             "document:read:private", "document:read:any", "document:manage:own", "document:manage:all",
             "chat:read:own", "chat:delete:own", "chat:web", "evaluation:use", "user:manage", "role:manage",
-            "config:view", "config:edit", "ops:view", "log:view", "log:clear", "cache:clear", "report:view"));
+            "config:view", "config:edit", "ops:view", "log:view", "log:clear", "cache:clear", "report:view", "message:view"));
 
         roleRepo.save(role("EXECUTIVE", "高管", "跨部门全局可见，含作者私有", true, permissionRepo,
             "document:read:public", "document:read:department", "document:read:executive",
             "document:read:private", "document:read:any", "document:manage:own",
-            "chat:read:own", "chat:delete:own", "chat:web", "evaluation:use", "report:view"));
+            "chat:read:own", "chat:delete:own", "chat:web", "evaluation:use", "report:view", "message:view"));
 
         roleRepo.save(role("USER", "普通员工", "默认员工权限", true, permissionRepo,
             "document:read:public", "document:read:department", "document:read:private",
-            "document:manage:own", "chat:read:own", "chat:delete:own", "evaluation:use"));
+            "document:manage:own", "chat:read:own", "chat:delete:own", "evaluation:use", "message:view"));
     }
 
     private void ensureGuestRole(RoleRepo roleRepo, PermissionRepo permissionRepo) {
@@ -149,6 +151,21 @@ public class DataInitializer {
             if (has) continue;
             Set<Permission> perms = new LinkedHashSet<>(role.getPermissions());
             perms.add(web);
+            role.setPermissions(perms);
+            roleRepo.save(role);
+        }
+    }
+
+    private void ensureMessagePermission(RoleRepo roleRepo, PermissionRepo permissionRepo) {
+        Permission msg = permissionRepo.findById("message:view").orElseGet(() ->
+            permissionRepo.save(new Permission("message:view", "查看消息中心", "系统")));
+        for (String code : List.of("ADMIN", "EXECUTIVE", "USER")) {
+            Role role = roleRepo.findByCode(code).orElse(null);
+            if (role == null) continue;
+            boolean has = role.getPermissions().stream().anyMatch(p -> "message:view".equals(p.getCode()));
+            if (has) continue;
+            Set<Permission> perms = new LinkedHashSet<>(role.getPermissions());
+            perms.add(msg);
             role.setPermissions(perms);
             roleRepo.save(role);
         }

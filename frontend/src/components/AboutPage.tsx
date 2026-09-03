@@ -54,6 +54,15 @@ const techStack: { icon: React.ReactNode; group: string; items: string[] }[] = [
 
 const changelog: { title: string; items: string[] }[] = [
   {
+    title: 'v2.0.2 增量：消息中心 + 角色合并',
+    items: [
+      '新增消息中心：关键操作落库为通知，顶栏铃铛 + 未读角标 + 消息列表页',
+      '可见范围：管理员全量审计，普通用户只看自己相关；新增 message:view 权限',
+      '覆盖操作：demo 初始化 / 测评 / 文档处理·删除·下载 / 问答 / 删除会话 / 用户与角色变更 / 下载 CSV / 清缓存与日志 / 配置更新 / 重建索引',
+      '角色管理合并进用户管理页（Tab 切换），顶栏去掉独立「角色」入口',
+    ],
+  },
+  {
     title: 'v2.0.1 增量：RAG 检索增强 + Demo 一键初始化',
     items: [
       '多轮查询改写（Query Rewrite）：检索前结合历史把「它 / 这个」等指代改写成独立可检索 query，含运行时开关，失败自动回退',
@@ -137,7 +146,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
             <RobotOutlined style={{ fontSize: 56, opacity: 0.95 }} />
             <Title level={2} style={{ color: '#fff', margin: '12px 0 4px' }}>RAG 评测服务 v2</Title>
             <Space size={8} style={{ marginBottom: 12 }}>
-              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>v2.0.1</Tag>
+              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>v2.0.2</Tag>
               <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>Spring Boot 3.5.16</Tag>
               <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>React 18</Tag>
             </Space>
@@ -203,7 +212,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
         {/* 版本演进 */}
         <Card
           title="版本演进"
-          extra={<Tag color="blue">v2.0.0 → v2.0.1</Tag>}
+          extra={<Tag color="blue">v2.0.1 → v2.0.2</Tag>}
           style={{ marginBottom: 16, borderRadius: 12 }}
         >
           {changelog.map((g, idx) => (
@@ -224,7 +233,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
         <Card title="项目信息" style={{ borderRadius: 12 }}>
           <Descriptions column={{ xs: 1, sm: 2 }} size="small" bordered>
             <Descriptions.Item label="项目名称">RAG 评测服务 v2</Descriptions.Item>
-            <Descriptions.Item label="版本">v2.0.1</Descriptions.Item>
+            <Descriptions.Item label="版本">v2.0.2</Descriptions.Item>
             <Descriptions.Item label="项目简介" span={2}>
               RAG + generative AI evaluation service: hybrid retrieval (ES + pgvector + RRF), safety gate, PII redaction, semantic cache, ops metrics report
             </Descriptions.Item>

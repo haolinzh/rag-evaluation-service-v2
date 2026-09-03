@@ -1,7 +1,9 @@
 package com.rag.eval.controller;
 
 import com.rag.eval.model.SystemConfigDto;
+import com.rag.eval.service.AuthService;
 import com.rag.eval.service.ConfigService;
+import com.rag.eval.service.NotificationService;
 import com.rag.eval.service.RebuildService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -77,10 +79,15 @@ public class ConfigController {
 
     private final ConfigService config;
     private final RebuildService rebuildService;
+    private final AuthService authService;
+    private final NotificationService notificationService;
 
-    public ConfigController(ConfigService config, RebuildService rebuildService) {
+    public ConfigController(ConfigService config, RebuildService rebuildService,
+                            AuthService authService, NotificationService notificationService) {
         this.config = config;
         this.rebuildService = rebuildService;
+        this.authService = authService;
+        this.notificationService = notificationService;
     }
 
     @GetMapping
@@ -153,6 +160,7 @@ public class ConfigController {
         }
 
         config.putAll(changes);
+        notificationService.notify("config", "配置更新", "更新了系统配置", authService.currentUser(), null);
         return ResponseEntity.ok(buildDto());
     }
 
@@ -164,6 +172,7 @@ public class ConfigController {
             return ResponseEntity.badRequest().body(Map.of("error", "非法检索模式: " + mode));
         }
         config.put(K_MODE, mode);
+        notificationService.notify("config", "切换检索模式", "切换检索模式为 " + mode, authService.currentUser(), null);
         return ResponseEntity.ok(buildDto());
     }
 
@@ -176,6 +185,7 @@ public class ConfigController {
         } else {
             config.put(K_API_KEY, apiKey.trim());
         }
+        notificationService.notify("config", "更新 API Key", "更新 DashScope API Key", authService.currentUser(), null);
         return ResponseEntity.ok(buildDto());
     }
 
@@ -196,6 +206,7 @@ public class ConfigController {
         } else {
             config.put(K_WEB_API_KEY, apiKey.trim());
         }
+        notificationService.notify("config", "更新联网 API Key", "更新联网搜索 API Key", authService.currentUser(), null);
         return ResponseEntity.ok(buildDto());
     }
 
@@ -203,7 +214,9 @@ public class ConfigController {
     @PostMapping("/rebuild-vector-index")
     public ResponseEntity<?> rebuildVectorIndex() {
         try {
-            return ResponseEntity.ok(rebuildService.startRebuild());
+            RebuildService.RebuildStatus status = rebuildService.startRebuild();
+            notificationService.notify("config", "重建向量索引", "已启动向量索引重建", authService.currentUser(), null);
+            return ResponseEntity.ok(status);
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("error", e.getMessage()));
@@ -214,7 +227,9 @@ public class ConfigController {
     @PostMapping("/rebuild-pg-index")
     public ResponseEntity<?> rebuildPgIndex() {
         try {
-            return ResponseEntity.ok(rebuildService.rebuildPgIndex());
+            Object result = rebuildService.rebuildPgIndex();
+            notificationService.notify("config", "重建 PG 索引", "已重建 PG 向量索引", authService.currentUser(), null);
+            return ResponseEntity.ok(result);
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("error", e.getMessage()));
