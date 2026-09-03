@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, theme, Grid, Button, Drawer, Space, Dropdown } from 'antd';
-import { FileTextOutlined, BarChartOutlined, SettingOutlined, ExperimentOutlined, DashboardOutlined, TeamOutlined, SafetyCertificateOutlined, LogoutOutlined, LoginOutlined, UserOutlined, ControlOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { Layout, theme, Grid, Button, Drawer, Space, Dropdown, Badge } from 'antd';
+import { FileTextOutlined, BarChartOutlined, SettingOutlined, ExperimentOutlined, DashboardOutlined, TeamOutlined, LogoutOutlined, LoginOutlined, UserOutlined, ControlOutlined, InfoCircleOutlined, BellOutlined } from '@ant-design/icons';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import DocumentPanel from './components/DocumentPanel';
 import ChatPanel from './components/ChatPanel';
@@ -13,14 +13,14 @@ import EvaluationPage from './components/EvaluationPage';
 import OpsPage from './components/OpsPage';
 import LoginModal from './components/LoginModal';
 import UserManagement from './components/UserManagement';
-import RoleManagement from './components/RoleManagement';
 import AboutPage from './components/AboutPage';
+import MessageCenter from './components/MessageCenter';
 import type { DocumentMeta, AuthUser } from './types';
-import { listDocuments, fetchConfig, updateRetrievalMode, getToken, getCachedUser, setAuth, fetchMe, logout, fetchGuestPermissions } from './api';
+import { listDocuments, fetchConfig, updateRetrievalMode, getToken, getCachedUser, setAuth, fetchMe, logout, fetchGuestPermissions, fetchUnreadCount } from './api';
 
 const { Header, Content } = Layout;
 
-type View = 'main' | 'documents' | 'logs' | 'config' | 'eval' | 'ops' | 'users' | 'roles' | 'about';
+type View = 'main' | 'documents' | 'logs' | 'config' | 'eval' | 'ops' | 'users' | 'about' | 'messages';
 
 const VIEW_HASHES: Record<View, string> = {
   main: '/',
@@ -30,8 +30,8 @@ const VIEW_HASHES: Record<View, string> = {
   eval: '/eval',
   ops: '/ops',
   users: '/users',
-  roles: '/roles',
   about: '/about',
+  messages: '/messages',
 };
 
 const parseViewFromHash = (): View => {
@@ -52,6 +52,7 @@ const App: React.FC = () => {
   const [authReady, setAuthReady] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [adminLoginOpen, setAdminLoginOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { token: { colorBgContainer } } = theme.useToken();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -89,6 +90,18 @@ const App: React.FC = () => {
   useEffect(() => {
     if (user) return;
     fetchGuestPermissions().then(setGuestPermissions).catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !has('message:view')) {
+      setUnreadCount(0);
+      return;
+    }
+    const load = () => fetchUnreadCount().then(setUnreadCount).catch(() => {});
+    load();
+    const timer = setInterval(load, 15000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const refreshDocuments = () => {
@@ -151,8 +164,8 @@ const App: React.FC = () => {
   if (view === 'eval') return <EvaluationPage onBack={() => setView('main')} />;
   if (view === 'ops') return <OpsPage onBack={() => setView('main')} />;
   if (view === 'users') return <UserManagement onBack={() => setView('main')} />;
-  if (view === 'roles') return <RoleManagement onBack={() => setView('main')} />;
   if (view === 'about') return <AboutPage onBack={() => setView('main')} />;
+  if (view === 'messages') return <MessageCenter onBack={() => setView('main')} onReadAll={() => setUnreadCount(0)} />;
 
   const documentPanel = (
     <DocumentPanel
@@ -211,14 +224,9 @@ const App: React.FC = () => {
             配置
           </Button>
         )}
-        {has('user:manage') && (
+        {(has('user:manage') || has('role:manage')) && (
           <Button type="text" icon={<TeamOutlined />} onClick={() => setView('users')} style={{ color: '#fff' }}>
             用户
-          </Button>
-        )}
-        {has('role:manage') && (
-          <Button type="text" icon={<SafetyCertificateOutlined />} onClick={() => setView('roles')} style={{ color: '#fff' }}>
-            角色
           </Button>
         )}
         {isMobile && hasMetrics && (
@@ -230,6 +238,13 @@ const App: React.FC = () => {
           <Button type="text" icon={<ControlOutlined />} onClick={() => setAdminLoginOpen(true)} style={{ color: '#fff' }}>
             管理
           </Button>
+        )}
+        {has('message:view') && (
+          <Badge count={unreadCount} size="small">
+            <Button type="text" icon={<BellOutlined />} onClick={() => setView('messages')} style={{ color: '#fff' }}>
+              消息
+            </Button>
+          </Badge>
         )}
         {user ? (
           <Dropdown

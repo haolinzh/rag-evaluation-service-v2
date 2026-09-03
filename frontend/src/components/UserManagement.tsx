@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Tag, Typography, Space, message, Modal, Input, Select, Switch, Popconfirm } from 'antd';
+import { Table, Button, Tag, Typography, Space, message, Modal, Input, Select, Switch, Popconfirm, Tabs } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ManagedUser, Role, UserRequest } from '../types';
 import { listUsers, listRoles, createUser, updateUser, deleteUser } from '../api';
+import RoleManagement from './RoleManagement';
 
 interface Props {
   onBack: () => void;
@@ -139,11 +140,9 @@ const UserManagement: React.FC<Props> = ({ onBack }) => {
     },
   ];
 
-  return (
-    <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
-        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>用户管理</Typography.Title>
+  const usersTab = (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建用户</Button>
       </div>
 
@@ -200,6 +199,22 @@ const UserManagement: React.FC<Props> = ({ onBack }) => {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+
+  return (
+    <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
+        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>用户管理</Typography.Title>
+      </div>
+
+      <Tabs
+        items={[
+          { key: 'users', label: '用户', children: usersTab },
+          { key: 'roles', label: '角色', children: <RoleManagement embedded onBack={onBack} /> },
+        ]}
+      />
     </div>
   );
 };

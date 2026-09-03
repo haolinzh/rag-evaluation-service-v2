@@ -4,6 +4,7 @@ import com.rag.eval.model.AuthenticatedUser;
 import com.rag.eval.model.RequestLog;
 import com.rag.eval.repository.RequestLogRepo;
 import com.rag.eval.service.AuthService;
+import com.rag.eval.service.NotificationService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
@@ -19,10 +20,13 @@ public class LogController {
 
     private final RequestLogRepo requestLogRepo;
     private final AuthService authService;
+    private final NotificationService notificationService;
 
-    public LogController(RequestLogRepo requestLogRepo, AuthService authService) {
+    public LogController(RequestLogRepo requestLogRepo, AuthService authService,
+                         NotificationService notificationService) {
         this.requestLogRepo = requestLogRepo;
         this.authService = authService;
+        this.notificationService = notificationService;
     }
 
     @GetMapping
@@ -43,6 +47,7 @@ public class LogController {
     @DeleteMapping
     public ResponseEntity<Map<String, String>> clear() {
         requestLogRepo.deleteAll();
+        notificationService.notify("log", "清空请求日志", "已清空请求日志", authService.currentUser(), null);
         return ResponseEntity.ok(Map.of("message", "Logs cleared"));
     }
 }

@@ -6,6 +6,7 @@ import com.rag.eval.model.ChatRequest;
 import com.rag.eval.model.ChatResponse;
 import com.rag.eval.service.AuthService;
 import com.rag.eval.service.ChatService;
+import com.rag.eval.service.NotificationService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,17 +22,22 @@ public class ChatController {
 
     private final ChatService chatService;
     private final AuthService authService;
+    private final NotificationService notificationService;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
-    public ChatController(ChatService chatService, AuthService authService) {
+    public ChatController(ChatService chatService, AuthService authService,
+                          NotificationService notificationService) {
         this.chatService = chatService;
         this.authService = authService;
+        this.notificationService = notificationService;
     }
 
     @PostMapping
     public ResponseEntity<ChatResponse> chat(@RequestBody ChatRequest request) {
+        AuthenticatedUser viewer = authService.currentUserOrGuest();
         ChatResponse response = chatService.ask(request.getQuestion(), request.getSessionId(), request.getMode(),
-            request.getWebSearch(), request.getChatMode(), authService.currentUserOrGuest());
+            request.getWebSearch(), request.getChatMode(), viewer);
+        notificationService.notify("chat", "问答", truncate(request.getQuestion()), viewer, null);
         return ResponseEntity.ok(response);
     }
 
@@ -39,6 +45,7 @@ public class ChatController {
     public SseEmitter stream(@RequestBody ChatRequest request) {
         SseEmitter emitter = new SseEmitter(0L);
         AuthenticatedUser viewer = authService.currentUserOrGuest();
+        notificationService.notify("chat", "问答", truncate(request.getQuestion()), viewer, null);
         executor.execute(() -> chatService.streamAsk(
             request.getQuestion(), request.getSessionId(), request.getMode(), request.getWebSearch(), request.getChatMode(), emitter, viewer));
         return emitter;
@@ -51,7 +58,14 @@ public class ChatController {
 
     @DeleteMapping("/history/{sessionId}")
     public ResponseEntity<Void> deleteHistory(@PathVariable String sessionId) {
-        chatService.deleteHistory(sessionId, authService.currentUser());
+        AuthenticatedUser viewer = authService.currentUser();
+        chatService.deleteHistory(sessionId, viewer);
+        notificationService.notify("chat", "删除会话", "删除会话 " + sessionId, viewer, null);
         return ResponseEntity.noContent().build();
+    }
+
+    private static String truncate(String q) {
+        if (q == null) return "";
+        return q.length() <= 50 ? q : q.substring(0, 50) + "…";
     }
 }

@@ -34,6 +34,7 @@ public class EvaluationService {
     private final ConfigService configService;
     private final EvaluationQuestionService questionService;
     private final ObjectMapper objectMapper;
+    private final NotificationService notificationService;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
 
@@ -45,7 +46,8 @@ public class EvaluationService {
                              EvaluationRunRepo runRepo,
                              ConfigService configService,
                              EvaluationQuestionService questionService,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             NotificationService notificationService) {
         this.chatService = chatService;
         this.dashScope = dashScope;
         this.judgeService = judgeService;
@@ -55,6 +57,7 @@ public class EvaluationService {
         this.configService = configService;
         this.questionService = questionService;
         this.objectMapper = objectMapper;
+        this.notificationService = notificationService;
     }
 
     public List<EvaluationQuestion> loadQuestions() {
@@ -175,6 +178,7 @@ public class EvaluationService {
         report.setResults(allResults);
         saveReport(report, runName);
         emit(onEvent, Map.of("type", "done", "report", report));
+        notificationService.notify("evaluation", "测评完成", "测评「" + runName + "」完成（" + questions.size() + " 题 · " + effectiveModes.size() + " 模式）", viewer, null);
     }
 
     public List<EvaluationRunMeta> listRuns() {

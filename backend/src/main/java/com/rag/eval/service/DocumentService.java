@@ -47,6 +47,7 @@ public class DocumentService {
     private final FileStorageService fileStorage;
     private final ConfigService configService;
     private final AuthorizationService authorizationService;
+    private final NotificationService notificationService;
     // 串行处理入库任务：避免并发 embedding 限流与双写冲突，大文件按序排队。
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -54,7 +55,7 @@ public class DocumentService {
                            DocumentMetaRepo docRepo, VectorChunkRepo vectorChunkRepo,
                            ElasticsearchService esService, SemanticCacheService cacheService,
                            FileStorageService fileStorage, ConfigService configService,
-                           AuthorizationService authorizationService) {
+                           AuthorizationService authorizationService, NotificationService notificationService) {
         this.parser = parser;
         this.indexBuilder = indexBuilder;
         this.docRepo = docRepo;
@@ -64,6 +65,7 @@ public class DocumentService {
         this.fileStorage = fileStorage;
         this.configService = configService;
         this.authorizationService = authorizationService;
+        this.notificationService = notificationService;
     }
 
     public record OriginalFile(String fileName, byte[] bytes) {}
@@ -145,6 +147,7 @@ public class DocumentService {
             meta.setChunkCount(chunks.size());
             meta.setErrorMessage(null);
             docRepo.save(meta);
+            notificationService.notify("document", "文档处理完成", "「" + meta.getFileName() + "」分块完成（" + chunks.size() + " chunk）", meta.getOwnerId(), meta.getOwnerName(), null);
         } catch (Exception e) {
             // 清理可能的部分写入，避免脏数据进入检索；文件保留，删除文档时统一清。
             log.warn("Document ingest failed: id={}, file={}", meta.getId(), meta.getFileName(), e);
@@ -152,6 +155,7 @@ public class DocumentService {
             meta.setStatus(STATUS_FAILED);
             meta.setErrorMessage(e.getMessage());
             docRepo.save(meta);
+            notificationService.notify("document", "文档处理失败", "「" + meta.getFileName() + "」" + (e.getMessage() == null ? "处理失败" : e.getMessage()), meta.getOwnerId(), meta.getOwnerName(), null);
         }
     }
 
@@ -190,6 +194,7 @@ public class DocumentService {
         DocumentMeta meta = requireManage(id, viewer);
         deleteIndexedData(meta);
         docRepo.delete(meta);
+        notificationService.notify("document", "文档删除", "「" + meta.getFileName() + "」已删除", viewer, null);
     }
 
     public Optional<OriginalFile> getOriginal(Long id, AuthenticatedUser viewer) {

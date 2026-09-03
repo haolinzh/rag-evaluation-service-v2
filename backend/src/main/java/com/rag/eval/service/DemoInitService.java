@@ -26,19 +26,22 @@ public class DemoInitService {
     private final UserRepo userRepo;
     private final PasswordEncoder passwordEncoder;
     private final EvaluationService evaluationService;
+    private final NotificationService notificationService;
 
     public DemoInitService(CorpusService corpusService,
                            PermissionRepo permissionRepo,
                            RoleRepo roleRepo,
                            UserRepo userRepo,
                            PasswordEncoder passwordEncoder,
-                           EvaluationService evaluationService) {
+                           EvaluationService evaluationService,
+                           NotificationService notificationService) {
         this.corpusService = corpusService;
         this.permissionRepo = permissionRepo;
         this.roleRepo = roleRepo;
         this.userRepo = userRepo;
         this.passwordEncoder = passwordEncoder;
         this.evaluationService = evaluationService;
+        this.notificationService = notificationService;
     }
 
     public void init(Consumer<Map<String, Object>> onEvent, AuthenticatedUser viewer) {
@@ -54,6 +57,7 @@ public class DemoInitService {
 
         emit(onEvent, Map.of("type", "phase", "phase", "evaluation", "message", "正在触发一次测评…"));
         evaluationService.runEvaluation(null, true, new JudgeConfig(null, null), null, onEvent, viewer);
+        notificationService.notify("demo_init", "初始化成功", "演示数据初始化完成（文档入库 + 演示角色/用户 + 一次测评）", viewer, null);
     }
 
     private int seedDemoPermissions() {
