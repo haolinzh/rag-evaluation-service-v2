@@ -27,6 +27,7 @@ public class DataInitializer {
                                PasswordEncoder passwordEncoder, JdbcTemplate jdbc) {
         return args -> {
             ensureUniqueFileName(jdbc);
+            ensureQueueIndex(jdbc);
             if (permissionRepo.count() == 0) {
                 permissionRepo.saveAll(permissionCatalog());
             }
@@ -49,6 +50,15 @@ public class DataInitializer {
             jdbc.execute("CREATE UNIQUE INDEX IF NOT EXISTS uk_document_meta_file_name ON document_meta (file_name)");
         } catch (Exception e) {
             System.err.println("Failed to create unique index on document_meta.file_name: " + e.getMessage());
+        }
+    }
+
+    private void ensureQueueIndex(JdbcTemplate jdbc) {
+        try {
+            // poller 按 (status, next_retry_at) 捞待处理任务，缺索引会退化成顺序扫描。
+            jdbc.execute("CREATE INDEX IF NOT EXISTS idx_document_meta_queue ON document_meta (status, next_retry_at)");
+        } catch (Exception e) {
+            System.err.println("Failed to create queue index on document_meta: " + e.getMessage());
         }
     }
 

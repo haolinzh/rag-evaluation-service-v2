@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Form, Select, InputNumber, Switch, Button, Typography, Space, Card, Alert, message, Row, Col, Spin, Input, Radio, Popconfirm, Progress } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, SettingOutlined, KeyOutlined, DatabaseOutlined, ReloadOutlined, GlobalOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, SettingOutlined, DatabaseOutlined, ReloadOutlined, GlobalOutlined, ThunderboltOutlined, RobotOutlined, CloudOutlined, SearchOutlined, MessageOutlined, SlidersOutlined, ClockCircleOutlined, ExperimentOutlined, SafetyOutlined } from '@ant-design/icons';
 import { fetchConfig, updateConfig, updateApiKey, updateWebApiKey, rebuildVectorIndex, fetchRebuildStatus, rebuildPgIndex, initDemo } from '../api';
 import type { SystemConfig, RebuildStatus, DemoEvent } from '../types';
 
@@ -359,7 +359,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
 
       <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false} disabled={!canEdit}>
         <Card
-          title={<span><ThunderboltOutlined /> Demo 数据初始化</span>}
+          title={<span><ThunderboltOutlined style={{ color: '#faad14' }} /> Demo 数据初始化</span>}
           size="small"
           style={{ marginBottom: 16 }}
           extra={canEdit ? (
@@ -394,7 +394,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
 
         <Row gutter={16}>
           <Col xs={24} lg={12}>
-            <Card title={<span><KeyOutlined /> API Key（阿里云百炼）</span>} size="small" style={{ marginBottom: 16 }}>
+            <Card title={<span><CloudOutlined style={{ color: '#1677ff' }} /> API Key（阿里云百炼）</span>} size="small" style={{ marginBottom: 16 }}>
               <Typography.Text type="secondary">
                 用于调用 DashScope 大模型 / Embedding。填写后即时生效；仅显示脱敏尾号，不回显完整 Key。
               </Typography.Text>
@@ -419,7 +419,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
               </div>
             </Card>
 
-            <Card title="检索参数" size="small" style={{ marginBottom: 16 }}>
+            <Card title={<span><SearchOutlined style={{ color: '#1677ff' }} /> 检索参数</span>} size="small" style={{ marginBottom: 16 }}>
               <Row gutter={16}>
                 <Col span={8}>
                   <Form.Item label="检索模式" name="mode" rules={[{ required: true }]}>
@@ -475,7 +475,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
               </Row>
             </Card>
 
-            <Card title="对话模式" size="small" style={{ marginBottom: 16 }}>
+            <Card title={<span><MessageOutlined style={{ color: '#52c41a' }} /> 对话模式</span>} size="small" style={{ marginBottom: 16 }}>
               <Form.Item
                 label="对话模式"
                 name="chatMode"
@@ -499,7 +499,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
               </Form.Item>
             </Card>
 
-            <Card title="生成参数（对话）" size="small" style={{ marginBottom: 16 }}>
+            <Card title={<span><SlidersOutlined style={{ color: '#fa8c16' }} /> 生成参数（对话）</span>} size="small" style={{ marginBottom: 16 }}>
               <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
                 作用于知识库问答生成。top_p 设为 1.0 时以 temperature 为准；max_tokens 为 0 表示不限制长度。
               </Typography.Text>
@@ -529,7 +529,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
               </Form.Item>
             </Card>
 
-            <Card title="缓存" size="small" style={{ marginBottom: 16 }}>
+            <Card title={<span><ClockCircleOutlined style={{ color: '#13c2c2' }} /> 缓存</span>} size="small" style={{ marginBottom: 16 }}>
               <Row gutter={16}>
                 <Col span={8}>
                   <Form.Item label="启用语义缓存" name="enabled" valuePropName="checked">
@@ -546,7 +546,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
           </Col>
 
           <Col xs={24} lg={12}>
-            <Card title={<span><GlobalOutlined /> 联网搜索</span>} size="small" style={{ marginBottom: 16 }}>
+            <Card title={<span><GlobalOutlined style={{ color: '#2f54eb' }} /> 联网搜索</span>} size="small" style={{ marginBottom: 16 }}>
               <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
                 知识库检索置信度不足时自动联网补充（需用户具备 chat:web 权限）。默认关闭，开启后请选择搜索引擎并配置对应 Key。
               </Typography.Text>
@@ -591,7 +591,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
               </div>
             </Card>
 
-            <Card title="模型" size="small" style={{ marginBottom: 16 }}>
+            <Card title={<span><RobotOutlined style={{ color: '#722ed1' }} /> 模型</span>} size="small" style={{ marginBottom: 16 }}>
               {dimMismatch && (
                 <Alert
                   type="warning"
@@ -619,7 +619,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
               </Row>
             </Card>
 
-            <Card title="评测（大模型评测）" size="small" style={{ marginBottom: 16 }}>
+            <Card title={<span><ExperimentOutlined style={{ color: '#eb2f96' }} /> 评测（大模型评测）</span>} size="small" style={{ marginBottom: 16 }}>
               <Row gutter={16}>
                 <Col span={8}>
                   <Form.Item label="评测模型" name="judgeModel" rules={[{ required: true }]}>
@@ -639,7 +639,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
               </Row>
             </Card>
 
-            <Card title="安全" size="small" style={{ marginBottom: 16 }}>
+            <Card title={<span><SafetyOutlined style={{ color: '#f5222d' }} /> 安全</span>} size="small" style={{ marginBottom: 16 }}>
               <Row gutter={16}>
                 <Col span={8}>
                   <Form.Item label="最小相似度 (min-similarity)" name="minSimilarity" rules={[{ required: true }]}>
@@ -667,7 +667,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
         </Row>
 
         <Card
-          title={<span><DatabaseOutlined /> 向量数据库</span>}
+          title={<span><DatabaseOutlined style={{ color: '#336791' }} /> 向量数据库</span>}
           size="small"
           style={{ marginBottom: 16 }}
           extra={canEdit ? (
@@ -726,12 +726,12 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
             extra="保存后语义检索立即切换到所选后端"
           >
             <Radio.Group optionType="button" buttonStyle="solid">
-              <Radio.Button value="pgvector">PgVector</Radio.Button>
-              <Radio.Button value="elasticsearch">Elasticsearch</Radio.Button>
+              <Radio.Button value="pgvector"><DatabaseOutlined style={{ color: '#336791' }} /> PgVector</Radio.Button>
+              <Radio.Button value="elasticsearch"><SearchOutlined style={{ color: '#00bfb3' }} /> Elasticsearch</Radio.Button>
             </Radio.Group>
           </Form.Item>
 
-          <Typography.Text strong style={{ display: 'block', margin: '12px 0 8px' }}>PgVector 参数</Typography.Text>
+          <Typography.Text strong style={{ display: 'block', margin: '12px 0 8px' }}><DatabaseOutlined style={{ color: '#336791', marginRight: 4 }} /> PgVector 参数</Typography.Text>
           <Row gutter={16}>
             <Col span={6}>
               <Form.Item label="索引类型" name="pgIndexType" rules={[{ required: true }]}>
@@ -755,7 +755,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
             </Col>
           </Row>
 
-          <Typography.Text strong style={{ display: 'block', margin: '12px 0 8px' }}>Elasticsearch 参数</Typography.Text>
+          <Typography.Text strong style={{ display: 'block', margin: '12px 0 8px' }}><SearchOutlined style={{ color: '#00bfb3', marginRight: 4 }} /> Elasticsearch 参数</Typography.Text>
           <Row gutter={16}>
             <Col span={6}>
               <Form.Item label="num_candidates" name="esNumCandidates" rules={[{ required: true }]}>

@@ -2,6 +2,7 @@ package com.rag.eval.controller;
 
 import com.rag.eval.model.ChunkPage;
 import com.rag.eval.model.OpsStatus;
+import com.rag.eval.model.SystemStatus;
 import com.rag.eval.service.OpsService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,6 +22,11 @@ public class OpsController {
     @GetMapping("/status")
     public OpsStatus status() {
         return opsService.status();
+    }
+
+    @GetMapping("/system")
+    public SystemStatus system() {
+        return opsService.systemStatus();
     }
 
     @GetMapping("/chunks")

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Button, Typography, Space, Card, Checkbox, Switch, Progress, Table, Tabs, Tag, Alert, Spin, Empty, Select, Segmented, Tooltip,
 } from 'antd';
-import { ArrowLeftOutlined, ExperimentOutlined, ThunderboltOutlined, StopOutlined, InfoCircleOutlined, OrderedListOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ExperimentOutlined, ThunderboltOutlined, StopOutlined, InfoCircleOutlined, OrderedListOutlined, BarChartOutlined } from '@ant-design/icons';
 import { runEvaluation, fetchEvaluationQuestions, fetchEvaluationHistory, fetchEvaluationRun, fetchConfig, fetchEvaluationStatus, cancelEvaluation } from '../api';
 import type { EvaluationEvent, EvaluationSummary, EvaluationQuestionResult, EvaluationRunMeta, EvaluationQuestion } from '../types';
 import QuestionManagement from './QuestionManagement';
@@ -355,7 +355,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
       <Space style={{ marginBottom: 16 }} align="center" wrap>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          <ExperimentOutlined /> 一键测评
+          <ExperimentOutlined style={{ color: '#eb2f96' }} /> 一键测评
         </Typography.Title>
         <Button icon={<OrderedListOutlined />} onClick={() => setShowQuestionManagement(true)}>
           管理测试集
@@ -478,7 +478,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
       )}
 
       {summaries.length > 0 && (
-        <Card size="small" title="三模式对比" style={{ marginBottom: 16 }}>
+        <Card size="small" title={<span><BarChartOutlined style={{ color: '#eb2f96' }} /> 三模式对比</span>} style={{ marginBottom: 16 }}>
           <Table
             columns={comparisonColumns}
             dataSource={summaryRows}
@@ -490,7 +490,7 @@ const EvaluationPage: React.FC<Props> = ({ onBack }) => {
       )}
 
       {orderedModes.length > 0 && (
-        <Card size="small" title="逐题明细">
+        <Card size="small" title={<span><OrderedListOutlined style={{ color: '#722ed1' }} /> 逐题明细</span>}>
           <Tabs
             items={orderedModes.map((m) => ({
               key: m,

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { List, Button, Typography, Badge, Tag, Space, Empty, message } from 'antd';
-import { ArrowLeftOutlined, ReloadOutlined, CheckOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ReloadOutlined, CheckOutlined, BellOutlined } from '@ant-design/icons';
 import { fetchMessages, fetchUnreadCount, markMessagesRead } from '../api';
 import type { AppNotification } from '../types';
 
@@ -65,7 +65,7 @@ const MessageCenter: React.FC<Props> = ({ onBack, onReadAll }) => {
     <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
-        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>消息中心</Typography.Title>
+        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}><BellOutlined style={{ color: '#faad14' }} /> 消息中心</Typography.Title>
         <Button icon={<ReloadOutlined />} onClick={refresh} loading={loading}>刷新</Button>
         <Button icon={<CheckOutlined />} onClick={handleMarkAllRead} disabled={unread === 0}>全部已读</Button>
       </div>

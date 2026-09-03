@@ -7,6 +7,7 @@ import com.rag.eval.model.ChatResponse;
 import com.rag.eval.service.AuthService;
 import com.rag.eval.service.ChatService;
 import com.rag.eval.service.NotificationService;
+import org.slf4j.MDC;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -46,8 +47,16 @@ public class ChatController {
         SseEmitter emitter = new SseEmitter(0L);
         AuthenticatedUser viewer = authService.currentUserOrGuest();
         notificationService.notify("chat", "问答", truncate(request.getQuestion()), viewer, null);
-        executor.execute(() -> chatService.streamAsk(
-            request.getQuestion(), request.getSessionId(), request.getMode(), request.getWebSearch(), request.getChatMode(), emitter, viewer));
+        String traceId = MDC.get("traceId");
+        executor.execute(() -> {
+            if (traceId != null) MDC.put("traceId", traceId);
+            try {
+                chatService.streamAsk(
+                    request.getQuestion(), request.getSessionId(), request.getMode(), request.getWebSearch(), request.getChatMode(), emitter, viewer);
+            } finally {
+                MDC.remove("traceId");
+            }
+        });
         return emitter;
     }
 

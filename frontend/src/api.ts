@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta, OpsStatus, ChunkPage, RebuildStatus, AuthUser, Permission, Role, ManagedUser, UserRequest, RoleRequest, RegisterRequest, DemoEvent, AppNotification } from './types';
+import type { DocumentMeta, ChatResponse, ChatMessage, OpsReport, ChunkConfig, ChunkPreview, RequestLog, SystemConfig, Source, EvaluationQuestion, EvaluationQuestionInput, EvaluationEvent, EvaluationReport, EvaluationRunMeta, OpsStatus, ChunkPage, RebuildStatus, AuthUser, Permission, Role, ManagedUser, UserRequest, RoleRequest, RegisterRequest, DemoEvent, AppNotification, SystemStatus } from './types';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -201,6 +201,11 @@ export async function fetchMetricsSummary(): Promise<OpsReport> {
 
 export async function fetchOpsStatus(): Promise<OpsStatus> {
   const { data } = await api.get('/ops/status');
+  return data;
+}
+
+export async function fetchSystemStatus(): Promise<SystemStatus> {
+  const { data } = await api.get('/ops/system');
   return data;
 }
 

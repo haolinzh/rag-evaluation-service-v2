@@ -47,10 +47,19 @@ public class DocumentMeta {
     private String storedFileName;
 
     @Column(name = "status")
-    private String status = "PENDING";
+    private String status = "QUEUED";
 
     @Column(name = "error_message")
     private String errorMessage;
+
+    @Column(name = "attempt_count", nullable = false)
+    private int attemptCount = 0;
+
+    @Column(name = "next_retry_at")
+    private LocalDateTime nextRetryAt;
+
+    @Column(name = "claimed_at")
+    private LocalDateTime claimedAt;
 
     @Column(name = "embedding_model")
     private String embeddingModel;

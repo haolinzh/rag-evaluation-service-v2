@@ -15,6 +15,10 @@ import {
   CodeOutlined,
   DeploymentUnitOutlined,
   CloudOutlined,
+  AppstoreOutlined,
+  HistoryOutlined,
+  InfoCircleOutlined,
+  ProjectOutlined,
 } from '@ant-design/icons';
 
 const { Title, Paragraph, Text } = Typography;
@@ -53,6 +57,16 @@ const techStack: { icon: React.ReactNode; group: string; items: string[] }[] = [
 ];
 
 const changelog: { title: string; items: string[] }[] = [
+  {
+    title: 'v2.0.3：工程底座升级 + 可观测性',
+    items: [
+      'Testcontainers 集成测试：真实 PG/ES/Redis 容器验证消息可见性、OR 查询、RBAC seed 幂等',
+      '文档入库多 worker 并发 + 持久化任务 + 失败重试（worker 数 / 队列 / embedding 并发可配置）',
+      'Micrometer + Prometheus 指标，traceId（X-Request-Id）贯穿日志与请求记录',
+      '运维页新增系统指标卡片：worker 线程池 / JVM / 入库队列实时监控',
+      'UI 图标统一：首页三面板与各页面标题、卡片标题加彩色图标',
+    ],
+  },
   {
     title: 'v2.0.2 增量：消息中心 + 角色合并',
     items: [
@@ -133,7 +147,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
     <div style={{ height: '100vh', overflowY: 'auto', padding: 24, boxSizing: 'border-box', background: '#f5f6f8' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, maxWidth: 1000, margin: '0 auto 20px' }}>
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回</Button>
-        <Title level={4} style={{ margin: 0, flex: 1 }}>关于</Title>
+        <Title level={4} style={{ margin: 0, flex: 1 }}><InfoCircleOutlined style={{ color: '#1677ff' }} /> 关于</Title>
       </div>
 
       <div style={{ maxWidth: 1000, margin: '0 auto' }}>
@@ -146,7 +160,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
             <RobotOutlined style={{ fontSize: 56, opacity: 0.95 }} />
             <Title level={2} style={{ color: '#fff', margin: '12px 0 4px' }}>RAG 评测服务 v2</Title>
             <Space size={8} style={{ marginBottom: 12 }}>
-              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>v2.0.2</Tag>
+              <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>v2.0.3</Tag>
               <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>Spring Boot 3.5.16</Tag>
               <Tag color="rgba(255,255,255,0.2)" style={{ color: '#fff', border: '1px solid rgba(255,255,255,0.4)' }}>React 18</Tag>
             </Space>
@@ -168,7 +182,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
         </Card>
 
         {/* 核心特性 */}
-        <Card title="核心特性" style={{ marginBottom: 16, borderRadius: 12 }}>
+        <Card title={<span><AppstoreOutlined style={{ color: '#1677ff' }} /> 核心特性</span>} style={{ marginBottom: 16, borderRadius: 12 }}>
           <Row gutter={[16, 16]}>
             {features.map((f) => (
               <Col key={f.title} xs={24} sm={12} md={6}>
@@ -186,7 +200,7 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
         </Card>
 
         {/* 技术栈 */}
-        <Card title="技术栈" style={{ marginBottom: 16, borderRadius: 12 }}>
+        <Card title={<span><CodeOutlined style={{ color: '#722ed1' }} /> 技术栈</span>} style={{ marginBottom: 16, borderRadius: 12 }}>
           <Row gutter={[16, 16]}>
             {techStack.map((g) => (
               <Col key={g.group} xs={24} md={8}>
@@ -211,8 +225,8 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
 
         {/* 版本演进 */}
         <Card
-          title="版本演进"
-          extra={<Tag color="blue">v2.0.1 → v2.0.2</Tag>}
+          title={<span><HistoryOutlined style={{ color: '#52c41a' }} /> 版本演进</span>}
+          extra={<Tag color="blue">v2.0.2 → v2.0.3</Tag>}
           style={{ marginBottom: 16, borderRadius: 12 }}
         >
           {changelog.map((g, idx) => (
@@ -230,10 +244,10 @@ const AboutPage: React.FC<Props> = ({ onBack }) => {
         </Card>
 
         {/* 项目信息 */}
-        <Card title="项目信息" style={{ borderRadius: 12 }}>
+        <Card title={<span><ProjectOutlined style={{ color: '#13c2c2' }} /> 项目信息</span>} style={{ borderRadius: 12 }}>
           <Descriptions column={{ xs: 1, sm: 2 }} size="small" bordered>
             <Descriptions.Item label="项目名称">RAG 评测服务 v2</Descriptions.Item>
-            <Descriptions.Item label="版本">v2.0.2</Descriptions.Item>
+            <Descriptions.Item label="版本">v2.0.3</Descriptions.Item>
             <Descriptions.Item label="项目简介" span={2}>
               RAG + generative AI evaluation service: hybrid retrieval (ES + pgvector + RRF), safety gate, PII redaction, semantic cache, ops metrics report
             </Descriptions.Item>

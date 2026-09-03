@@ -10,6 +10,7 @@ import com.rag.eval.model.JudgeConfig;
 import com.rag.eval.service.AuthService;
 import com.rag.eval.service.EvaluationQuestionService;
 import com.rag.eval.service.EvaluationService;
+import org.slf4j.MDC;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -105,10 +106,13 @@ public class EvaluationController {
         JudgeConfig judge = request == null ? new JudgeConfig(null, null)
             : new JudgeConfig(request.getJudgeEnabled(), request.getJudgeModel());
         AuthenticatedUser viewer = authService.currentUser();
+        String traceId = MDC.get("traceId");
         executor.execute(() -> {
+            if (traceId != null) MDC.put("traceId", traceId);
             try {
                 evaluationService.runEvaluation(modes, clearCache, judge, types, event -> send(emitter, event), viewer);
             } finally {
+                MDC.remove("traceId");
                 emitter.complete();
             }
         });

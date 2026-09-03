@@ -32,6 +32,12 @@ dashscope:
   chat-model: qwen-turbo
   embedding-model: text-embedding-v3
   rerank-model: qwen3-rerank
+  embedding-max-concurrency: 2
+
+document:
+  ingest:
+    worker-count: 3
+    queue-capacity: 50
 
 elasticsearch:
   host: ${ES_HOST:localhost}
@@ -90,3 +96,18 @@ corpus:
 logging:
   level:
     com.rag.eval: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    elasticsearch:
+      # 项目用自定义 elasticsearch.host/port 构建客户端，Actuator 的 ES 指示器
+      # 走 spring.elasticsearch.* 默认地址(localhost:9200)，容器内必失败；ES 健康
+      # 状态改由 /api/ops/status 自行采集（集群状态/节点/堆内存等），此处禁用。
+      enabled: false

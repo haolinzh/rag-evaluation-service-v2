@@ -1,0 +1,13 @@
+spring:
+  ai:
+    dashscope:
+      api-key: sk-test-dummy-key
+
+dashscope:
+  api-key: sk-test-dummy-key
+
+retrieval:
+  mode: vector
+
+storage:
+  upload-dir: ${UPLOAD_DIR:target/test-uploads}
