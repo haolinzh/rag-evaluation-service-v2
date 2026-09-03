@@ -4,5 +4,5 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public record EvaluationRunMeta(Long id, LocalDateTime createdAt, List<String> modes,
-                                boolean judgeEnabled, String judgeModel) {
+                                boolean judgeEnabled, String judgeModel, String runName) {
 }

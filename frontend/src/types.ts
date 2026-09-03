@@ -185,6 +185,7 @@ export interface SystemConfig {
     rrfK: number;
     rerankCandidates: number;
     similarityThreshold: number;
+    queryRewriteEnabled: boolean;
   };
   models: { chat: string; embedding: string; rerank: string };
   safety: {
@@ -281,6 +282,7 @@ export interface EvaluationRunMeta {
   modes: string[];
   judgeEnabled?: boolean;
   judgeModel?: string | null;
+  runName?: string | null;
 }
 
 export interface EsStatus {
@@ -363,3 +365,8 @@ export type EvaluationEvent =
   | { type: 'done'; report: EvaluationReport }
   | { type: 'cancelled' }
   | { type: 'error'; message: string };
+
+export type DemoEvent =
+  | { type: 'phase'; phase: string; message: string }
+  | { type: 'rbac'; permissionsCreated: number; roleCreated: boolean; userCreated: boolean }
+  | EvaluationEvent;

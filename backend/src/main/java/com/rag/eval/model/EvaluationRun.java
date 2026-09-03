@@ -21,6 +21,9 @@ public class EvaluationRun {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "run_name")
+    private String runName;
+
     @Column(name = "modes", columnDefinition = "TEXT")
     private String modes;
 

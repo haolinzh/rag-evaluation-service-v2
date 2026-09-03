@@ -55,6 +55,7 @@ public class ChatService {
     private final ConfigService configService;
     private final WebSearchService webSearchService;
     private final AgentService agentService;
+    private final QueryRewriteService queryRewriteService;
 
     public ChatService(DashScopeService dashScope,
                        RetrievalService retrievalService,
@@ -70,7 +71,8 @@ public class ChatService {
                        AuthService authService,
                        ConfigService configService,
                        WebSearchService webSearchService,
-                       AgentService agentService) {
+                       AgentService agentService,
+                       QueryRewriteService queryRewriteService) {
         this.dashScope = dashScope;
         this.retrievalService = retrievalService;
         this.safetyService = safetyService;
@@ -86,6 +88,7 @@ public class ChatService {
         this.configService = configService;
         this.webSearchService = webSearchService;
         this.agentService = agentService;
+        this.queryRewriteService = queryRewriteService;
     }
 
     public ChatResponse ask(String question, String sessionId, String mode, String webSearch, String chatMode, AuthenticatedUser viewer) {
@@ -100,7 +103,6 @@ public class ChatService {
 
         String effectiveMode = retrievalService.resolveMode(mode);
         String webMode = normalizeWebSearch(webSearch);
-        boolean cacheable = "off".equals(webMode);
         String cacheScope = cacheScope(viewer);
 
         OpsMetrics metrics = metricsCollector.startRequest(sessionId, effectiveMode);
@@ -119,8 +121,8 @@ public class ChatService {
             // 1. Check semantic cache
             String normalized = normalizeQuery(question);
             Instant cacheStart = Instant.now();
-            String cached = cacheable
-                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope) : null;
+            String cached = !"on".equals(webMode)
+                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope, webMode) : null;
             boolean cacheHit = cached != null;
             long cacheLookupLatencyMs = Duration.between(cacheStart, Instant.now()).toMillis();
             metrics.setCacheLookupLatencyMs(cacheLookupLatencyMs);
@@ -145,8 +147,16 @@ public class ChatService {
             }
 
             // 2. Retrieve
+            List<ChatMessage> history = loadHistory(sessionId, viewer);
+            QueryRewriteService.RewriteResult rw = queryRewriteService.rewrite(question, history);
+            String retrievalQuery = rw.query();
+            if (rw.rewritten()) {
+                llmCallCount++;
+                metrics.setPromptTokens(metrics.getPromptTokens() + rw.promptTokens());
+                metrics.setCompletionTokens(metrics.getCompletionTokens() + rw.completionTokens());
+            }
             Instant retrievalStart = Instant.now();
-            RetrievalService.RetrievalResult rr = retrievalService.retrieve(question, effectiveMode);
+            RetrievalService.RetrievalResult rr = retrievalService.retrieve(retrievalQuery, effectiveMode);
             List<SearchResult> chunks = filterVisible(rr.results(), viewer);
             if (shouldWebSearch(webMode, chunks, viewer)) {
                 metrics.setWebSearchUsed(true);
@@ -202,7 +212,6 @@ public class ChatService {
                 .map(doc -> "【来源: " + doc.getFileName() + "】\n" + doc.getContent())
                 .collect(Collectors.joining("\n\n"));
 
-            List<ChatMessage> history = loadHistory(sessionId, viewer);
             String historyContext = !history.isEmpty()
                 ? "=== 对话历史 ===\n" + history.stream()
                     .limit(10)
@@ -263,8 +272,8 @@ public class ChatService {
             ChatResponse response = new ChatResponse(answerText, gen.thinking(), effectiveMode, sources, false, null);
 
             // 9. Cache (store full response so cache hits still return sources)
-            if (cacheable) {
-                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope);
+            if (shouldCache(webMode, metrics.isWebSearchUsed())) {
+                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope, webMode);
             }
 
             // 10. Save history
@@ -325,7 +334,6 @@ public class ChatService {
 
         String effectiveMode = retrievalService.resolveMode(mode);
         String webMode = normalizeWebSearch(webSearch);
-        boolean cacheable = "off".equals(webMode);
         String cacheScope = cacheScope(viewer);
 
         OpsMetrics metrics = metricsCollector.startRequest(sessionId, effectiveMode);
@@ -344,8 +352,8 @@ public class ChatService {
             // 1. Semantic cache
             String normalized = normalizeQuery(question);
             Instant cacheStart = Instant.now();
-            String cached = cacheable
-                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope) : null;
+            String cached = !"on".equals(webMode)
+                ? cacheService.lookup(normalized, effectiveMode, dashScope.getChatModel(), cacheScope, webMode) : null;
             boolean cacheHit = cached != null;
             long cacheLookupLatencyMs = Duration.between(cacheStart, Instant.now()).toMillis();
             metrics.setCacheLookupLatencyMs(cacheLookupLatencyMs);
@@ -373,8 +381,16 @@ public class ChatService {
             }
 
             // 2. Retrieve
+            List<ChatMessage> history = loadHistory(sessionId, viewer);
+            QueryRewriteService.RewriteResult rw = queryRewriteService.rewrite(question, history);
+            String retrievalQuery = rw.query();
+            if (rw.rewritten()) {
+                llmCallCount++;
+                metrics.setPromptTokens(metrics.getPromptTokens() + rw.promptTokens());
+                metrics.setCompletionTokens(metrics.getCompletionTokens() + rw.completionTokens());
+            }
             Instant retrievalStart = Instant.now();
-            RetrievalService.RetrievalResult rr = retrievalService.retrieve(question, effectiveMode);
+            RetrievalService.RetrievalResult rr = retrievalService.retrieve(retrievalQuery, effectiveMode);
             List<SearchResult> chunks = filterVisible(rr.results(), viewer);
             if (shouldWebSearch(webMode, chunks, viewer)) {
                 metrics.setWebSearchUsed(true);
@@ -432,7 +448,6 @@ public class ChatService {
                 .map(doc -> "【来源: " + doc.getFileName() + "】\n" + doc.getContent())
                 .collect(Collectors.joining("\n\n"));
 
-            List<ChatMessage> history = loadHistory(sessionId, viewer);
             String historyContext = !history.isEmpty()
                 ? "=== 对话历史 ===\n" + history.stream()
                     .limit(10)
@@ -504,8 +519,8 @@ public class ChatService {
             ChatResponse response = new ChatResponse(redacted, thinkingText, effectiveMode, sources, false, null);
 
             // 9. Cache (store full response so cache hits still return sources + thinking)
-            if (cacheable) {
-                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope);
+            if (shouldCache(webMode, metrics.isWebSearchUsed())) {
+                cacheService.store(normalized, effectiveMode, dashScope.getChatModel(), serializeCached(response), cacheScope, webMode);
             }
 
             // 10. Save history
@@ -765,6 +780,12 @@ public class ChatService {
         // 默认 0.55，与 safety.out-of-scope-threshold 对齐：内部置信度低于该值会被
         // SafetyService 拒答，此时才联网补救，避免 [0.4, 0.55) 区间既不联网又被拒答。
         return maxScore < configService.getDouble("web.fallback-threshold", 0.55);
+    }
+
+    private boolean shouldCache(String webMode, boolean webUsed) {
+        // 仅知识库(off) 一定可缓存；自动(auto) 只在没实际联网时缓存，避免把联网结果缓存成纯知识库答案。
+        if ("off".equals(webMode)) return true;
+        return "auto".equals(webMode) && !webUsed;
     }
 
     private String cacheScope(AuthenticatedUser viewer) {

@@ -19,7 +19,8 @@ public record SystemConfigDto(
     String agentModel
 ) {
     public record Retrieval(String mode, int topK, int recallSizeMultiplier, int rrfK,
-                            int rerankCandidates, double similarityThreshold) {}
+                            int rerankCandidates, double similarityThreshold,
+                            boolean queryRewriteEnabled) {}
 
     public record Models(String chat, String embedding, String rerank) {}
 

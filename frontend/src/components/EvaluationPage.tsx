@@ -66,7 +66,8 @@ const fmt = (v: number | undefined | null, digits: number) =>
 const formatTime = (iso: string) => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
 
 const runLabel = (h: EvaluationRunMeta) => {
-  const base = `#${h.id} · ${formatTime(h.createdAt)} · ${h.modes.join(' / ')}`;
+  const name = h.runName || `#${h.id}`;
+  const base = `${name} · ${formatTime(h.createdAt)} · ${h.modes.join(' / ')}`;
   if (h.judgeEnabled == null && h.judgeModel == null) return base;
   return `${base} · ${h.judgeEnabled ? `大模型评测 ${h.judgeModel ?? ''}` : '规则评测'}`;
 };

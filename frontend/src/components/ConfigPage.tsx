@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Form, Select, InputNumber, Switch, Button, Typography, Space, Card, Alert, message, Row, Col, Spin, Input, Radio, Popconfirm, Progress } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, SettingOutlined, KeyOutlined, DatabaseOutlined, ReloadOutlined, GlobalOutlined } from '@ant-design/icons';
-import { fetchConfig, updateConfig, updateApiKey, updateWebApiKey, rebuildVectorIndex, fetchRebuildStatus, rebuildPgIndex } from '../api';
-import type { SystemConfig, RebuildStatus } from '../types';
+import { ArrowLeftOutlined, SaveOutlined, SettingOutlined, KeyOutlined, DatabaseOutlined, ReloadOutlined, GlobalOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { fetchConfig, updateConfig, updateApiKey, updateWebApiKey, rebuildVectorIndex, fetchRebuildStatus, rebuildPgIndex, initDemo } from '../api';
+import type { SystemConfig, RebuildStatus, DemoEvent } from '../types';
 
 interface Props {
   onBack: () => void;
@@ -17,6 +17,7 @@ interface FormValues {
   rrfK: number;
   rerankCandidates: number;
   similarityThreshold: number;
+  queryRewriteEnabled: boolean;
   chat: string;
   embedding: string;
   rerank: string;
@@ -55,6 +56,12 @@ const rebuildPhaseLabel: Record<string, string> = {
   FAILED: '失败',
 };
 
+const demoPhaseLabel: Record<string, string> = {
+  documents: '入库演示文档并分块',
+  rbac: '创建演示权限、角色与用户',
+  evaluation: '触发一次测评',
+};
+
 const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
   const [form] = Form.useForm<FormValues>();
   const [config, setConfig] = useState<SystemConfig | null>(null);
@@ -65,6 +72,10 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
   const [savingWebKey, setSavingWebKey] = useState(false);
   const [rebuildStatus, setRebuildStatus] = useState<RebuildStatus | null>(null);
   const [rebuildingPg, setRebuildingPg] = useState(false);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoPhase, setDemoPhase] = useState<string | null>(null);
+  const [demoMessage, setDemoMessage] = useState<string | null>(null);
+  const [demoRbac, setDemoRbac] = useState<{ permissionsCreated: number; roleCreated: boolean; userCreated: boolean } | null>(null);
 
   const embeddingValue = Form.useWatch('embedding', form);
 
@@ -79,6 +90,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
           rrfK: c.retrieval.rrfK,
           rerankCandidates: c.retrieval.rerankCandidates,
           similarityThreshold: c.retrieval.similarityThreshold,
+          queryRewriteEnabled: c.retrieval.queryRewriteEnabled,
           chat: c.models.chat,
           embedding: c.models.embedding,
           rerank: c.models.rerank,
@@ -158,6 +170,7 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
         rrfK: v.rrfK,
         rerankCandidates: v.rerankCandidates,
         similarityThreshold: v.similarityThreshold,
+        queryRewriteEnabled: v.queryRewriteEnabled,
       },
       models: { chat: v.chat, embedding: v.embedding, rerank: v.rerank },
       judge: { enabled: v.judgeEnabled, model: v.judgeModel, temperature: v.judgeTemperature },
@@ -280,6 +293,51 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
     }
   };
 
+  const onDemoInit = async () => {
+    setDemoRunning(true);
+    setDemoPhase(null);
+    setDemoMessage(null);
+    setDemoRbac(null);
+    try {
+      await initDemo((evt: DemoEvent) => {
+        switch (evt.type) {
+          case 'phase':
+            setDemoPhase(evt.phase);
+            setDemoMessage(evt.message);
+            break;
+          case 'rbac':
+            setDemoRbac({ permissionsCreated: evt.permissionsCreated, roleCreated: evt.roleCreated, userCreated: evt.userCreated });
+            break;
+          case 'ingested':
+            setDemoMessage(`已入库：${evt.fileName}（${evt.chunks} 分块）`);
+            break;
+          case 'ingest_done':
+            setDemoMessage(evt.ingested > 0 ? `文档入库完成，共 ${evt.ingested} 个` : '文档已存在，跳过入库');
+            break;
+          case 'start':
+            setDemoMessage(`测评开始：${evt.totalQuestions} 题 × ${evt.modes.length} 模式`);
+            break;
+          case 'question_done':
+            setDemoMessage(`测评中：${evt.mode} ${evt.index + 1}/${evt.total}`);
+            break;
+          case 'done':
+            setDemoMessage('测评完成');
+            message.success('Demo 数据初始化完成');
+            break;
+          case 'error':
+            message.error(evt.message ?? '初始化失败');
+            break;
+          default:
+            break;
+        }
+      });
+    } catch (e: any) {
+      message.error(e?.message ?? '初始化失败');
+    } finally {
+      setDemoRunning(false);
+    }
+  };
+
   if (!config) {
     return (
       <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}>
@@ -297,6 +355,40 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
       </Space>
 
       <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false} disabled={!canEdit}>
+        <Card
+          title={<span><ThunderboltOutlined /> Demo 数据初始化</span>}
+          size="small"
+          style={{ marginBottom: 16 }}
+          extra={canEdit ? (
+            <Button type="primary" icon={<ThunderboltOutlined />} onClick={onDemoInit} loading={demoRunning} disabled={demoRunning}>
+              一键初始化
+            </Button>
+          ) : null}
+        >
+          <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+            一键完成：①入库演示文档并分块 ②创建演示权限/角色/用户（账号 demo / demo123）③触发一次评测。重复执行安全（已存在则跳过），适合新拿到项目的用户快速上手。
+          </Typography.Text>
+          {demoRunning && (
+            <Alert
+              type="info"
+              showIcon
+              message={demoPhase ? `正在${demoPhaseLabel[demoPhase] ?? demoPhase}…` : '初始化中…'}
+              description={
+                <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                  {demoMessage}
+                  {demoRbac && (
+                    <div style={{ marginTop: 4 }}>
+                      权限新增 {demoRbac.permissionsCreated} 个
+                      {demoRbac.roleCreated ? '，角色 DEMO 已创建' : '，角色 DEMO 已存在'}
+                      {demoRbac.userCreated ? '，用户 demo 已创建' : '，用户 demo 已存在'}
+                    </div>
+                  )}
+                </div>
+              }
+            />
+          )}
+        </Card>
+
         <Row gutter={16}>
           <Col xs={24} lg={12}>
             <Card title={<span><KeyOutlined /> API Key（阿里云百炼）</span>} size="small" style={{ marginBottom: 16 }}>
@@ -360,6 +452,11 @@ const ConfigPage: React.FC<Props> = ({ onBack, onSaved, canEdit }) => {
                 <Col span={8}>
                   <Form.Item label="相似度阈值 (similarity-threshold)" name="similarityThreshold" rules={[{ required: true }]}>
                     <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="查询改写 (多轮指代消解)" name="queryRewriteEnabled" valuePropName="checked">
+                    <Switch />
                   </Form.Item>
                 </Col>
               </Row>

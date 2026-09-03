@@ -19,15 +19,15 @@ public class SemanticCacheService {
         this.config = config;
     }
 
-    public String lookup(String normalizedQuestion, String mode, String model, String scope) {
+    public String lookup(String normalizedQuestion, String mode, String model, String scope, String webMode) {
         if (!config.getBool("cache.semantic.enabled", true)) return null;
-        String key = cacheKey(normalizedQuestion, mode, model, scope);
+        String key = cacheKey(normalizedQuestion, mode, model, scope, webMode);
         return redisTemplate.opsForValue().get(key);
     }
 
-    public void store(String normalizedQuestion, String mode, String model, String answer, String scope) {
+    public void store(String normalizedQuestion, String mode, String model, String answer, String scope, String webMode) {
         if (!config.getBool("cache.semantic.enabled", true)) return;
-        String key = cacheKey(normalizedQuestion, mode, model, scope);
+        String key = cacheKey(normalizedQuestion, mode, model, scope, webMode);
         long ttlSeconds = config.getInt("cache.semantic.ttl-seconds", 3600);
         redisTemplate.opsForValue().set(key, answer, ttlSeconds, TimeUnit.SECONDS);
     }
@@ -39,10 +39,10 @@ public class SemanticCacheService {
         }
     }
 
-    private String cacheKey(String question, String mode, String model, String scope) {
-        // Keyed by retrieval mode, chat model AND user scope so answers/sources never
-        // leak across users with different visibility.
+    private String cacheKey(String question, String mode, String model, String scope, String webMode) {
+        // Keyed by retrieval mode, chat model, user scope AND web mode so answers/sources
+        // never leak across users with different visibility or retrieval strategy.
         String normalized = question.toLowerCase().strip().replaceAll("\\s+", " ");
-        return "cache:qa:" + Integer.toHexString((normalized + "|" + mode + "|" + model + "|" + scope).hashCode());
+        return "cache:qa:" + Integer.toHexString((normalized + "|" + mode + "|" + model + "|" + scope + "|" + webMode).hashCode());
     }
 }

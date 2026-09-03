@@ -70,16 +70,25 @@ const LogPanel: React.FC<Props> = ({ onOpenManagement, canClear }) => {
       render: (v: string | null) => v || '—',
     },
     {
-      title: '模式',
+      title: '对话模式',
+      dataIndex: 'chatMode',
+      key: 'chatMode',
+      width: 90,
+      render: (v: string | undefined) =>
+        v === 'agent' ? (
+          <Tag color="purple" style={{ margin: 0 }}>agent</Tag>
+        ) : (
+          <Tag color="default" style={{ margin: 0 }}>workflow</Tag>
+        ),
+    },
+    {
+      title: '检索模式',
       dataIndex: 'retrievalMode',
       key: 'retrievalMode',
       width: 104,
-      render: (v: string, r: RequestLog) =>
-        r.chatMode === 'agent' ? (
-          <Tag color="purple" style={{ margin: 0 }}>agent</Tag>
-        ) : (
-          <Tag color={retrievalModeColor[v] ?? 'default'} style={{ margin: 0 }}>{v}</Tag>
-        ),
+      render: (v: string) => (
+        <Tag color={retrievalModeColor[v] ?? 'default'} style={{ margin: 0 }}>{v}</Tag>
+      ),
     },
     {
       title: '状态',
@@ -119,7 +128,7 @@ const LogPanel: React.FC<Props> = ({ onOpenManagement, canClear }) => {
         dataSource={logs}
         loading={loading}
         pagination={{ pageSize: 15, size: 'small', showSizeChanger: false }}
-        scroll={{ x: 430 }}
+        scroll={{ x: 540 }}
       />
     </div>
   );

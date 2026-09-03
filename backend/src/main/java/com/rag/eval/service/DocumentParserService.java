@@ -26,8 +26,10 @@ import java.util.regex.Pattern;
 @Component
 public class DocumentParserService {
 
-    private static final Pattern CHAPTER_PAT = Pattern.compile("^第([一二三四五六七八九十百]+)章\\s*(.*)");
-    private static final Pattern SECTION_PAT = Pattern.compile("^第([一二三四五六七八九十百]+)节\\s*(.*)");
+    private static final Pattern CHAPTER_PAT = Pattern.compile("^第([0-9一二三四五六七八九十百]+)章\\s*(.*)", Pattern.MULTILINE);
+    private static final Pattern SECTION_PAT = Pattern.compile("^第([0-9一二三四五六七八九十百]+)节\\s*(.*)", Pattern.MULTILINE);
+    // 真实章节标题是简短名词短语；正文里「第2章 提到的…」这类引用含标点/长句，需排除。
+    private static final String SENTENCE_PUNCT = "，。、；：！？——…《》【】（）";
 
     private final Tika tika = new Tika();
     private final boolean ocrEnabled;
@@ -122,12 +124,21 @@ public class DocumentParserService {
             : splitText(text, config.chunkSize(), config.overlap());
         List<ChunkData> result = new ArrayList<>();
 
+        String currentChapter = null;
+        String currentSection = null;
         for (int i = 0; i < rawChunks.size(); i++) {
             String content = rawChunks.get(i);
             if (content.isBlank()) continue;
 
             String chapter = extractChapter(content);
+            if (chapter != null) {
+                currentChapter = chapter;
+                currentSection = null;
+            }
             String section = extractSection(content);
+            if (section != null) {
+                currentSection = section;
+            }
             String language = detectLanguage(content);
 
             result.add(ChunkData.builder()
@@ -135,8 +146,8 @@ public class DocumentParserService {
                 .fileName(fileName)
                 .sourceType(sourceType)
                 .language(language)
-                .chapter(chapter)
-                .section(section)
+                .chapter(currentChapter)
+                .section(currentSection)
                 .chunkIndex(i)
                 .content(content)
                 .build());
@@ -198,12 +209,33 @@ public class DocumentParserService {
 
     private String extractChapter(String text) {
         var m = CHAPTER_PAT.matcher(text);
-        return m.find() ? "第" + m.group(1) + "章 " + m.group(2) : null;
+        String last = null;
+        while (m.find()) {
+            String title = m.group(2);
+            if (isHeading(title)) {
+                last = "第" + m.group(1) + "章 " + title.trim();
+            }
+        }
+        return last;
     }
 
     private String extractSection(String text) {
         var m = SECTION_PAT.matcher(text);
-        return m.find() ? "第" + m.group(1) + "节 " + m.group(2) : null;
+        String last = null;
+        while (m.find()) {
+            String title = m.group(2);
+            if (isHeading(title)) {
+                last = "第" + m.group(1) + "节 " + title.trim();
+            }
+        }
+        return last;
+    }
+
+    private boolean isHeading(String title) {
+        if (title == null) return false;
+        String t = title.trim();
+        if (t.length() > 30) return false;
+        return t.codePoints().noneMatch(cp -> SENTENCE_PUNCT.indexOf(cp) >= 0);
     }
 
     private String detectLanguage(String text) {

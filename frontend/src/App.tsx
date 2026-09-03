@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, theme, Grid, Button, Drawer, Space } from 'antd';
+import { Layout, theme, Grid, Button, Drawer, Space, Dropdown } from 'antd';
 import { FileTextOutlined, BarChartOutlined, SettingOutlined, ExperimentOutlined, DashboardOutlined, TeamOutlined, SafetyCertificateOutlined, LogoutOutlined, LoginOutlined, UserOutlined, ControlOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import DocumentPanel from './components/DocumentPanel';
@@ -157,15 +157,13 @@ const App: React.FC = () => {
   const documentPanel = (
     <DocumentPanel
       documents={documents}
-      retrievalMode={retrievalMode}
-      onModeChange={handleModeChange}
       onRefresh={refreshDocuments}
       onOpenManagement={() => setView('documents')}
       canManageDocs={has('document:manage:own') || has('document:manage:all')}
       onRequireLogin={() => setLoginOpen(true)}
     />
   );
-  const chatPanel = <ChatPanel retrievalMode={retrievalMode} isGuest={!user} canWebSearch={webEnabled && has('chat:web')} chatMode={chatMode} />;
+  const chatPanel = <ChatPanel retrievalMode={retrievalMode} onRetrievalModeChange={handleModeChange} isGuest={!user} canWebSearch={webEnabled && has('chat:web')} chatMode={chatMode} />;
   const canViewLogs = !!user;
   const hasMetrics = has('report:view') || canViewLogs;
   const metricsPanel = hasMetrics ? (
@@ -234,14 +232,22 @@ const App: React.FC = () => {
           </Button>
         )}
         {user ? (
-          <Space size={8} style={{ color: '#fff', fontSize: 14 }}>
-            <span style={{ opacity: 0.9 }}>
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'logout',
+                  icon: <LogoutOutlined />,
+                  label: '登出',
+                  onClick: handleLogout,
+                },
+              ],
+            }}
+          >
+            <span style={{ color: '#fff', fontSize: 14, cursor: 'pointer', opacity: 0.9 }}>
               <UserOutlined /> {user.displayName || user.username}{user.department ? ` · ${user.department}` : ''}
             </span>
-            <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout} style={{ color: '#fff' }}>
-              退出
-            </Button>
-          </Space>
+          </Dropdown>
         ) : (
           <Space size={8} style={{ color: '#fff', fontSize: 14 }}>
             <span style={{ opacity: 0.9 }}>
