@@ -1,7 +1,6 @@
 # RAG 评测服务 v2
 
-> 本仓库是 [rag-evaluation-service](https://github.com/haolinzh/rag-evaluation-service) 的 v2 迭代版，在原 case study 交付版本基础上继续演进。
-> 交付基线：tag [`v1.0-delivery`](https://github.com/haolinzh/rag-evaluation-service-v2/tree/v1.0-delivery)（commit `d29e8eb`），后续功能迭代在 `main` 分支进行。
+> RAG + generative AI evaluation service: hybrid retrieval (ES + pgvector + RRF), safety gate, PII redaction, semantic cache, ops metrics report
 
 ---
 
@@ -87,7 +86,7 @@
 
 ## 版本演进
 
-> 交付基线 `v1.0-delivery`（旧项目 case study 交付版）→ 本仓库持续迭代 → `v2.0.0`（首个正式版本，2026-09-01）→ **`v2.0.1`**（当前版本，2026-09-03）
+> `v2.0.0`（首个正式版本，2026-09-01）→ **`v2.0.1`**（当前版本，2026-09-03）
 
 ### v2.0.1 增量（2026-09-03）
 
@@ -105,7 +104,7 @@
 **4. 可观测性**
 - 请求日志新增「查询改写后 query」字段（`rewritten_query`），日志详情与检索流水线展示「查询改写」步骤
 
-### v2.0.0 相比交付基线的核心进步
+### v2.0.0 核心能力
 
 **1. 检索引擎跃迁**
 - 从单一向量检索升级为混合检索：ES BM25 关键词 + 向量语义并行召回，RRF（k=60）融合 + `qwen3-rerank` 精排
@@ -174,7 +173,7 @@ cp .env.example .env
 ### 3. 一键启动
 
 ```bash
-cd rag-evaluation-service
+cd rag-evaluation-service-v2
 docker-compose up -d --build
 ```
 
@@ -442,7 +441,7 @@ RRF_score(d) = Σ 1 / (k + rank_i(d))
 ### 3. 项目结构
 
 ```
-rag-evaluation-service/
+rag-evaluation-service-v2/
 ├── docker-compose.yml              # PostgreSQL(pgvector) + ES + Redis + 后端 + 前端
 ├── backend/
 │   ├── pom.xml
